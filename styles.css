@@ -1,0 +1,44 @@
+:root {
+  --ink: #1f2a44;
+  --ink-soft: #4a5068;
+  --paper: #fffdf6;
+  --rule: rgba(80, 130, 200, 0.22);
+  --margin: rgba(220, 80, 80, 0.45);
+  --p1: #2f5fd0;
+  --p2: #d8432f;
+  --good: #2a7a3b;
+  --wood: #b97c45;
+  --hand: "Kalam", "Comic Sans MS", cursive;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--wood);
+  color: var(--ink);
+  font-family: var(--sans);
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+#game {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  display: block;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#screens {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
