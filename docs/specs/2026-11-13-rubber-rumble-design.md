@@ -1,7 +1,7 @@
 # Rubber Rumble — Design Spec
 
 Date: 2026-11-13
-Status: approved in chat, awaiting written-spec review
+Status: approved; stat changes from balancing (Fruit-Scented defense 3, Sugar Rush stamina −1, Sleepy Bench stability −2) approved 2026-11-13
 
 ## 1. What it is
 
