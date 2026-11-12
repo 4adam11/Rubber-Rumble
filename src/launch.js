@@ -68,7 +68,8 @@ function finish(state, ring) {
 }
 
 export function release(state) {
-  if (state.phase !== 'twist') return;
+  // ignore a let-go before any twist (e.g. lifting the finger that placed the top)
+  if (state.phase !== 'twist' || state.rpm <= 0) return;
   finish(state, ringSize(state));
 }
 

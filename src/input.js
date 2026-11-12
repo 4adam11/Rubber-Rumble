@@ -124,8 +124,7 @@ export function createInput(target, getLayout, opts = {}) {
     }
   }
   function onTouchEnd(e) {
-    if (phase === 'menu') return;
-    e.preventDefault();
+    // always forget lifted fingers, even while a menu is up, or they go stale
     for (const t of e.changedTouches) tracker.up(t.identifier);
     for (let p = 0; p < players; p++) {
       if (hadTouches[p] > 0 && tracker.touchesFor(p).length === 0) {
@@ -133,6 +132,7 @@ export function createInput(target, getLayout, opts = {}) {
         hadTouches[p] = 0;
       }
     }
+    if (phase !== 'menu') e.preventDefault();
   }
 
   // one pointer during launch: drag to place, circle to twist
@@ -211,7 +211,15 @@ export function createInput(target, getLayout, opts = {}) {
     setPhase(p) {
       phase = p;
       edge = [fresh(), fresh()];
-      if (p !== 'battle') mouse = null;
+      if (p === 'battle') {
+        // fingers/mouse held over from the launch steer from where they are now
+        for (const pl of [0, 1]) for (const t of tracker.touchesFor(pl)) { t.startX = t.x; t.startY = t.y; }
+        if (mouse) { mouse.startX = mouse.x; mouse.startY = mouse.y; }
+      } else {
+        mouse = null;
+        tracker.clear();
+        hadTouches[0] = hadTouches[1] = 0;
+      }
       pair.forEach((d) => d.reset());
       circle.forEach((d) => d.reset());
     },

@@ -75,10 +75,12 @@ test('loose release adds wobble', () => {
 
 test('release position on the rim', () => {
   const a = twisting(1);
+  addStroke(a, 1);
   release(a);
   assert.ok(Math.abs(a.result.x - LAUNCH.START_RADIUS) < 1e-9);
   assert.ok(Math.abs(a.result.y) < 1e-9);
   const b = twisting(0);
+  addStroke(b, 1);
   release(b);
   assert.ok(Math.abs(b.result.x + LAUNCH.START_RADIUS) < 1e-9);
 });

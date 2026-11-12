@@ -239,6 +239,13 @@ export function step(w, intents) {
 export function simulate(w, elapsed, intents) {
   const e = Math.min(Math.max(0, elapsed), CONST.MAX_ELAPSED);
   const n = Math.floor(e / CONST.DT + 1e-9);
-  for (let i = 0; i < n; i++) step(w, intents);
+  // a special pressed on a frame too short for a step waits for the next step
+  w.pendingSpecial ??= [false, false];
+  intents?.forEach((it, i) => { if (it?.special) w.pendingSpecial[i] = true; });
+  for (let i = 0; i < n; i++) {
+    const withSpecial = [0, 1].map((k) => ({ steer: intents?.[k]?.steer || { x: 0, y: 0 }, special: w.pendingSpecial[k] }));
+    w.pendingSpecial = [false, false];
+    step(w, withSpecial);
+  }
   return e - n * CONST.DT;
 }
