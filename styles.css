@@ -59,7 +59,7 @@ html, body {
 }
 .screen.with-backdrop { background: rgba(40, 20, 5, 0.45); backdrop-filter: blur(2px); }
 .screen.bottom { align-items: flex-end; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
-.screen.hud { overflow: hidden; pointer-events: none; align-items: flex-start; justify-content: center; padding: 10px; background: none; }
+.screen.hud { overflow: hidden; pointer-events: none; align-items: flex-start; justify-content: flex-start; padding: 124px 16px 0; background: none; }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pop-in { from { transform: translateY(12px) rotate(-0.6deg); opacity: 0; } to { transform: none; opacity: 1; } }
 
@@ -274,7 +274,20 @@ kbd {
 
 @media (max-width: 760px) {
   .picker-body { grid-template-columns: 1fr; }
-  .card { position: sticky; bottom: 0; top: auto; }
+  .card { position: sticky; bottom: 0; top: auto; padding: 10px 12px; box-shadow: 0 -6px 18px rgba(30, 10, 0, 0.18), 3px 3px 0 var(--pc); }
+  .card-title { font-size: 15px; margin-bottom: 6px; }
+  .combo { padding: 4px 8px; margin-bottom: 6px; font-size: 12px; }
+  .combo strong { font-size: 15px; }
+  .combo-none { display: none; }
+  .stats { grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 6px; }
+  .stat { grid-template-columns: 1fr; gap: 2px; font-size: 11px; text-align: center; }
+  .stat b { gap: 1px; }
+  .stat i { height: 7px; border-width: 1px; }
+  .stat em { text-align: center; font-weight: 700; }
+  .special span { display: none; }
+  .special strong { font-size: 14px; }
+  .card .row { margin-top: 8px; flex-wrap: nowrap; }
+  .card .btn { min-height: 44px; padding: 6px 12px; font-size: 17px; }
   .chips { grid-template-columns: 1fr 1fr; }
   .chip { padding: 6px 8px; gap: 8px; }
   .chip-text small { display: none; }
