@@ -262,6 +262,10 @@ export function createRenderer(canvas) {
   }
 
   function banner(text, o = {}) {
+    if (o.x == null) {
+      // only one centre banner at a time
+      for (let i = banners.length - 1; i >= 0; i--) if (banners[i].x === null) banners.splice(i, 1);
+    }
     banners.push({
       text, sub: o.sub || '', x: o.x ?? null, y: o.y ?? null,
       color: o.color || '#1f2a44', size: o.size || 64, t: 0, life: o.life || 1.4,
