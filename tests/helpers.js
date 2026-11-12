@@ -4,10 +4,13 @@ import { createWorld } from '../src/physics.js';
 export const still = () => 0.5; // rng that makes random drift zero
 
 export function seeded(seed = 1) {
-  let s = seed >>> 0;
+  let a = seed >>> 0; // mulberry32
   return () => {
-    s = (s * 1664525 + 1013904223) >>> 0;
-    return s / 4294967296;
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
 

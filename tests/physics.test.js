@@ -97,7 +97,7 @@ test('simulate caps big gaps', () => {
   assert.ok(left >= 0 && left < CONST.DT);
 });
 
-test('no tunnelling on big gap', { todo: 'needs collisions (Task 3)' }, () => {
+test('no tunnelling on big gap', () => {
   const w = world2({ la: launch(-0.3, 0, 900), lb: launch(0.3, 0, 900) });
   w.tops[0].vx = 4; w.tops[1].vx = -4;
   let hits = 0;

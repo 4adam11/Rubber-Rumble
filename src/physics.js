@@ -43,7 +43,7 @@ export function createWorld(specs, launches, rng = Math.random, opts = {}) {
   };
 }
 
-function moveTop(w, t, intent, dt) {
+function moveTop(w, t, intent, dt, opp) {
   const s = t.spec;
   let ax = -w.bowlK * t.x;
   let ay = -w.bowlK * t.y;
@@ -57,6 +57,13 @@ function moveTop(w, t, intent, dt) {
     ax += sx * acc;
     ay += sy * acc;
     t.rpm -= CONST.STEER_COST * s.maxRPM * mag * dt;
+  }
+
+  if (w.time < t.dashUntil) {
+    const ox = opp.x - t.x, oy = opp.y - t.y;
+    const od = Math.hypot(ox, oy) || 1;
+    ax += (ox / od) * 4.0;
+    ay += (oy / od) * 4.0;
   }
 
   // Random wander, tangential to the bowl.
@@ -87,9 +94,88 @@ function moveTop(w, t, intent, dt) {
   t.angle += t.rpm * dt * 0.02;
 }
 
-// Collisions and specials are filled in by later code.
-function collide() {}
-function applySpecials() {}
+function useSpecial(w, t, i) {
+  const s = t.spec;
+  t.specialUsed = true;
+  w.events.push({ type: 'special', i, kind: t.specialKind });
+  switch (t.specialKind) {
+    case 'dash':
+      t.dashUntil = w.time + 0.35;
+      t.dashArmed = true;
+      t.dashArmedUntil = w.time + 1.5;
+      break;
+    case 'plant':
+      t.planted = true;
+      t.specialUntil = w.time + 2;
+      break;
+    case 'secondWind':
+      t.rpm = Math.min(s.maxRPM, t.rpm + 0.15 * s.maxRPM);
+      t.wobble = Math.max(0, t.wobble - 0.2);
+      break;
+    case 'recentre':
+      t.wobble = 0;
+      t.vx = t.vx * 0.3 - t.x * 0.5;
+      t.vy = t.vy * 0.3 - t.y * 0.5;
+      break;
+  }
+}
+
+function applySpecials(w, intents) {
+  w.tops.forEach((t, i) => {
+    if (t.planted && w.time >= t.specialUntil) t.planted = false;
+    if (t.dashArmed && w.time >= t.dashArmedUntil) t.dashArmed = false;
+    if (intents?.[i]?.special && !t.specialUsed) useSpecial(w, t, i);
+  });
+}
+
+function hitDamage(victim, attacker, impact) {
+  let d = impact * CONST.HIT_DAMAGE * attacker.spec.attack / victim.spec.defense;
+  if (attacker.spec.eraserId === 'doms-cubo') d *= 1.15;
+  if (attacker.dashArmed) d *= 1.5;
+  if (victim.planted) d *= 0.5;
+  return d;
+}
+
+function collide(w) {
+  const [a, b] = w.tops;
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const d = Math.hypot(dx, dy);
+  const minD = a.spec.radius + b.spec.radius;
+  if (d >= minD) return;
+  const nx = d > 1e-9 ? dx / d : 1;
+  const ny = d > 1e-9 ? dy / d : 0;
+  const ma = a.spec.mass * (a.planted ? 3 : 1);
+  const mb = b.spec.mass * (b.planted ? 3 : 1);
+
+  const overlap = minD - d;
+  a.x -= nx * overlap * (mb / (ma + mb));
+  a.y -= ny * overlap * (mb / (ma + mb));
+  b.x += nx * overlap * (ma / (ma + mb));
+  b.y += ny * overlap * (ma / (ma + mb));
+
+  const impact = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
+  if (impact <= 0) return;
+  const j = (1 + CONST.RESTITUTION) * impact / (1 / ma + 1 / mb);
+  a.vx -= (j / ma) * nx; a.vy -= (j / ma) * ny;
+  b.vx += (j / mb) * nx; b.vy += (j / mb) * ny;
+
+  const dmgA = hitDamage(a, b, impact);
+  const dmgB = hitDamage(b, a, impact);
+  a.dashArmed = false;
+  b.dashArmed = false;
+  a.rpm = Math.max(0, a.rpm - dmgA);
+  b.rpm = Math.max(0, b.rpm - dmgB);
+  w.tops.forEach((t, i) => {
+    t.wobble += impact * CONST.HIT_WOBBLE * (1 - t.spec.stability / 12);
+    if (!t.leadSnapped && impact > CONST.SNAP_BASE * t.spec.durability) {
+      t.leadSnapped = true;
+      t.rpm *= 0.75;
+      t.wobble += 0.3;
+      w.events.push({ type: 'snap', i });
+    }
+  });
+  w.events.push({ type: 'hit', x: a.x + nx * a.spec.radius, y: a.y + ny * a.spec.radius, impact });
+}
 
 function lossReason(t) {
   if (t.rpm <= 0) return 'stopped';
@@ -109,7 +195,7 @@ export function step(w, intents) {
   const dt = CONST.DT;
   const pre = w.tops.map((t) => t.rpm);
   applySpecials(w, intents, dt);
-  w.tops.forEach((t, i) => moveTop(w, t, intents?.[i], dt));
+  w.tops.forEach((t, i) => moveTop(w, t, intents?.[i], dt, w.tops[1 - i]));
   collide(w);
   w.time += dt;
 
