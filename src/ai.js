@@ -71,8 +71,14 @@ function decide(world, index) {
   const me = world.tops[index], opp = world.tops[1 - index];
   const d = Math.hypot(me.x, me.y);
   let steer;
+  const arch = me.spec.archetype;
+  const healthy = me.rpm > 0.25 * me.spec.maxRPM;
   if (d > 0.75) {
     steer = norm(-me.x, -me.y);
+  } else if (arch === 'attack' && healthy) {
+    steer = norm(opp.x - me.x, opp.y - me.y); // attackers ram
+  } else if (arch === 'defense') {
+    steer = d > 0.12 ? norm(-me.x, -me.y, 0.35) : { x: 0, y: 0 }; // hold the middle
   } else if (me.rpm > opp.rpm && me.spec.attack >= opp.spec.defense) {
     steer = norm(opp.x - me.x, opp.y - me.y);
   } else {
@@ -80,7 +86,7 @@ function decide(world, index) {
     const tx = d > 1e-9 ? -me.y / d : 0, ty = d > 1e-9 ? me.x / d : 1;
     const rx = d > 1e-9 ? me.x / d : 1, ry = d > 1e-9 ? me.y / d : 0;
     const corr = (0.35 - d) * 2;
-    steer = norm(tx + rx * corr, ty + ry * corr, 0.6);
+    steer = norm(tx + rx * corr, ty + ry * corr, 0.35);
   }
   return { steer, special: wantsSpecial(me, opp) };
 }

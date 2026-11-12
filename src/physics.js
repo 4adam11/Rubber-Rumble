@@ -3,22 +3,31 @@
 export const CONST = {
   DT: 1 / 120,
   R: 1,
-  BOWL_K: 1.2,
+  BOWL_K: 0.7,
   DAMPING: 0.6,
-  BASE_DRAIN: 40,
-  WOBBLE_RATE: 0.25,
-  WOBBLE_RECOVER: 0.05,
+  BASE_DRAIN: 18,
+  STAMINA_K: 0.35, // drain × (1 − STAMINA_K × (stamina − 5)/10)
+  STAB_K: 0.5, // wobble growth × (1 − STAB_K × (stability − 5)/10)
+  WOBBLE_RATE: 0.2,
+  WOBBLE_RECOVER: 0.12,
+  BASE_WOBBLE_K: 0.15, // extra wobble growth/drift per point of base wobble
   DRIFT: 0.5,
-  STEER_COST: 0.02,
+  STEER_COST: 0.01,
   RESTITUTION: 0.8,
-  HIT_DAMAGE: 80,
-  HIT_WOBBLE: 0.08,
-  SNAP_BASE: 0.25,
+  HIT_DAMAGE: 50,
+  ATK_BASE: 4, // damage ratio = (ATK_BASE + attack) / (ATK_BASE + defense)
+  HIT_LUCK: 0.25,
+  MASS_K: 0.3, // damage × (2·m_hitter/(m_a+m_b))^MASS_K // each hit's damage varies ±25%
+  HIT_WOBBLE: 0.03,
+  SNAP_BASE: 0.35,
   TIME_LIMIT: 60,
   MAX_ELAPSED: 0.25,
 };
 
 const KINDS = ['dash', 'plant', 'secondWind', 'recentre'];
+
+// 1 at stat 5, smaller for higher stats; k sets how much stats matter.
+const statMul = (v, k) => 1 - k * (v - 5) / 10;
 
 export function createWorld(specs, launches, rng = Math.random, opts = {}) {
   const tops = specs.map((spec, i) => {
@@ -70,7 +79,7 @@ function moveTop(w, t, intent, dt, opp) {
   const d = Math.hypot(t.x, t.y);
   const tx = d > 1e-9 ? -t.y / d : 0;
   const ty = d > 1e-9 ? t.x / d : 1;
-  const drift = CONST.DRIFT * (1 - s.stability / 10) * (1 + 0.25 * s.baseWobble) * (w.rng() * 2 - 1);
+  const drift = CONST.DRIFT * (1 - s.stability / 10) * (1 + CONST.BASE_WOBBLE_K * s.baseWobble) * (w.rng() * 2 - 1);
   ax += tx * drift;
   ay += ty * drift;
 
@@ -83,10 +92,10 @@ function moveTop(w, t, intent, dt, opp) {
   t.x += t.vx * dt;
   t.y += t.vy * dt;
 
-  t.rpm -= CONST.BASE_DRAIN * (1.3 - s.card.stamina / 10) * (1 + t.wobble) * (1.1 - s.mass * 0.02) * dt;
+  t.rpm -= CONST.BASE_DRAIN * statMul(s.card.stamina, CONST.STAMINA_K) * (1 + t.wobble) * (1.1 - s.mass * 0.02) * dt;
 
   if (t.rpm < 0.35 * s.maxRPM) {
-    t.wobble += CONST.WOBBLE_RATE * (1 - s.stability / 12) * (1 + 0.25 * s.baseWobble) * dt;
+    t.wobble += CONST.WOBBLE_RATE * statMul(s.stability, CONST.STAB_K) * (1 + CONST.BASE_WOBBLE_K * s.baseWobble) * dt;
   } else if (t.rpm > 0.5 * s.maxRPM) {
     t.wobble = Math.max(0, t.wobble - CONST.WOBBLE_RECOVER * (s.stability / 10) * dt);
   }
@@ -129,7 +138,8 @@ function applySpecials(w, intents) {
 }
 
 function hitDamage(victim, attacker, impact) {
-  let d = impact * CONST.HIT_DAMAGE * attacker.spec.attack / victim.spec.defense;
+  const spin = Math.min(1, attacker.rpm / attacker.spec.maxRPM);
+  let d = impact * CONST.HIT_DAMAGE * (CONST.ATK_BASE + attacker.spec.attack) / (CONST.ATK_BASE + victim.spec.defense) * (0.5 + spin);
   if (attacker.spec.eraserId === 'doms-cubo') d *= 1.15;
   if (attacker.dashArmed) d *= 1.5;
   if (victim.planted) d *= 0.5;
@@ -155,19 +165,30 @@ function collide(w) {
 
   const impact = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
   if (impact <= 0) return;
+  // who did the ramming: each top's own speed into the other
+  const ramA = Math.max(0, a.vx * nx + a.vy * ny);
+  const ramB = Math.max(0, -(b.vx * nx + b.vy * ny));
+  const shareA = ramA + ramB > 1e-9 ? ramA / (ramA + ramB) : 0.5;
   const j = (1 + CONST.RESTITUTION) * impact / (1 / ma + 1 / mb);
   a.vx -= (j / ma) * nx; a.vy -= (j / ma) * ny;
   b.vx += (j / mb) * nx; b.vy += (j / mb) * ny;
 
-  const dmgA = hitDamage(a, b, impact);
-  const dmgB = hitDamage(b, a, impact);
+  const luck = () => 1 - CONST.HIT_LUCK + 2 * CONST.HIT_LUCK * w.rng();
+  // heavier tops hit harder and shrug off light ones
+  const heavyA = ((2 * a.spec.mass) / (a.spec.mass + b.spec.mass)) ** CONST.MASS_K;
+  const heavyB = ((2 * b.spec.mass) / (a.spec.mass + b.spec.mass)) ** CONST.MASS_K;
+  const dmgA = hitDamage(a, b, impact) * (0.5 + (1 - shareA)) * heavyB * luck();
+  const dmgB = hitDamage(b, a, impact) * (0.5 + shareA) * heavyA * luck();
   a.dashArmed = false;
   b.dashArmed = false;
   a.rpm = Math.max(0, a.rpm - dmgA);
   b.rpm = Math.max(0, b.rpm - dmgB);
+  const rammed = [1.5 - shareA, 0.5 + shareA]; // the top being rammed shakes more
   w.tops.forEach((t, i) => {
-    t.wobble += impact * CONST.HIT_WOBBLE * (1 - t.spec.stability / 12);
-    if (!t.leadSnapped && impact > CONST.SNAP_BASE * t.spec.durability) {
+    const other = w.tops[1 - i];
+    const shove = (2 * other.spec.mass) / (t.spec.mass + other.spec.mass); // heavy tops shake less
+    t.wobble += impact * CONST.HIT_WOBBLE * rammed[i] * shove * statMul(t.spec.stability, CONST.STAB_K);
+    if (!t.leadSnapped && impact * rammed[i] > CONST.SNAP_BASE * t.spec.durability) {
       t.leadSnapped = true;
       t.rpm *= 0.75;
       t.wobble += 0.3;

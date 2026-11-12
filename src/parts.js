@@ -8,7 +8,7 @@ export const ERASERS = [
   { id: 'doms-cubo', name: 'Doms Cubo', mass: 5, size: 5, attack: 9, defense: 4, stamina: 4, archetype: 'attack', shape: 'cube', color: '#3b82c4', note: 'Corners hit hard, but it wobbles' },
   { id: 'camlin-dustfree', name: 'Camlin Dust-Free', mass: 5, size: 5, attack: 5, defense: 5, stamina: 8, archetype: 'stamina', shape: 'rect', color: '#f2d36b', note: 'Steady spinner' },
   { id: 'faber-dustfree', name: 'Faber-Castell Dust-Free', mass: 7, size: 6, attack: 5, defense: 7, stamina: 8, archetype: 'stamina', shape: 'rect', color: '#9ccf8e', note: 'Dense stamina tank' },
-  { id: 'fruit-scented', name: 'Fruit-Scented Fancy Eraser', mass: 2, size: 4, attack: 6, defense: 2, stamina: 4, archetype: 'wildcard', shape: 'pill', color: '#ff8fb1', note: 'Unpredictable — random special' },
+  { id: 'fruit-scented', name: 'Fruit-Scented Fancy Eraser', mass: 2, size: 4, attack: 6, defense: 3, stamina: 4, archetype: 'wildcard', shape: 'pill', color: '#ff8fb1', note: 'Unpredictable — random special' },
 ];
 
 export const LEADS = [
@@ -26,8 +26,8 @@ export const COMBOS = [
   { id: 'doms-double', name: 'Doms Double', desc: 'Cube wobble cancelled, Stamina +1', bad: false, erasers: ['doms-cubo'], leads: ['doms-y1'], mods: { baseWobble: -2, stamina: 1 } },
   { id: 'exam-hall', name: 'Exam Hall', desc: 'Stamina +2', bad: false, erasers: ['camlin-dustfree'], leads: ['camlin-exam'], mods: { stamina: 2 } },
   { id: 'toppers-kit', name: "Topper's Kit", desc: 'Defense +2, Stability +1', bad: false, erasers: ['faber-dustfree'], leads: ['faber-2b'], mods: { defense: 2, stability: 1 } },
-  { id: 'sugar-rush', name: 'Sugar Rush', desc: 'Speed +2, Stamina −2', bad: false, erasers: ['fruit-scented'], leads: ['apsara-platinum'], mods: { speed: 2, stamina: -2 } },
-  { id: 'sleepy-bench', name: 'Sleepy Bench', desc: 'Speed −2 (too heavy for a soft tip)', bad: true, erasers: ['apsara-jumbo'], leads: ['faber-2b'], mods: { speed: -2 } },
+  { id: 'sugar-rush', name: 'Sugar Rush', desc: 'Speed +2, Stamina −1', bad: false, erasers: ['fruit-scented'], leads: ['apsara-platinum'], mods: { speed: 2, stamina: -1 } },
+  { id: 'sleepy-bench', name: 'Sleepy Bench', desc: 'Speed −2, Stability −2 (too heavy for a soft tip)', bad: true, erasers: ['apsara-jumbo'], leads: ['faber-2b'], mods: { speed: -2, stability: -2 } },
   { id: 'hindustan-family', name: 'Hindustan Family', desc: 'Stamina +1, Durability +1', bad: false, erasers: 'family', leads: 'family', mods: { stamina: 1, durability: 1 } },
 ];
 

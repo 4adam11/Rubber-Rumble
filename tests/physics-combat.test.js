@@ -57,16 +57,18 @@ function snapWorld(speed) {
   return w;
 }
 const snapEvents = (w) => w.events.filter((e) => e.type === 'snap');
+// target lead (Nataraj HB) durability 6; attacker (Apsara Absolute) durability 10
+const SNAP_AT = CONST.SNAP_BASE * 6; // a rammed top feels 1.5× the impact, the rammer 0.5×
 
 test('lead snap only above threshold', () => {
-  const below = snapWorld(1.3);
+  const below = snapWorld(0.6 * SNAP_AT) /* rammed side feels 1.5× */;
   steps(below, 0.5);
   assert.equal(snapEvents(below).length, 0);
   assert.equal(below.tops[1].leadSnapped, false);
 });
 
 test('lead snap fires once', () => {
-  const w = snapWorld(2.2);
+  const w = snapWorld(1.25 * SNAP_AT);
   steps(w, 0.4);
   assert.equal(snapEvents(w).length, 1);
   assert.equal(snapEvents(w)[0].i, 1);
@@ -75,7 +77,7 @@ test('lead snap fires once', () => {
   assert.equal(w.tops[0].leadSnapped, false);
   // second big hit
   w.events.length = 0;
-  Object.assign(w.tops[0], { x: -0.25, y: 0, vx: 2.4, vy: 0 });
+  Object.assign(w.tops[0], { x: -0.25, y: 0, vx: 1.4 * SNAP_AT, vy: 0 });
   Object.assign(w.tops[1], { x: 0.25, y: 0, vx: 0, vy: 0, wobble: 0 });
   steps(w, 0.4);
   assert.ok(w.events.some((e) => e.type === 'hit'));
@@ -83,9 +85,9 @@ test('lead snap fires once', () => {
 });
 
 test('lead snap costs a quarter of the spin', () => {
-  const snapped = snapWorld(2.2);
+  const snapped = snapWorld(1.25 * SNAP_AT);
   steps(snapped, 0.4);
-  const ctrl = snapWorld(2.2);
+  const ctrl = snapWorld(1.25 * SNAP_AT);
   ctrl.tops[1].leadSnapped = true; // already snapped: same hit, no snap
   steps(ctrl, 0.4);
   const ratio = snapped.tops[1].rpm / ctrl.tops[1].rpm;

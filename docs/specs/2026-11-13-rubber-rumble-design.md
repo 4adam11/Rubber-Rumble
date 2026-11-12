@@ -61,7 +61,7 @@ All parts are available from the start.
 | `doms-cubo` | Doms Cubo | 5 | 5 | 9 | 4 | 4 | Attack | square body: +2 base wobble, corner hits |
 | `camlin-dustfree` | Camlin Dust-Free | 5 | 5 | 5 | 5 | 8 | Stamina | steady |
 | `faber-dustfree` | Faber-Castell Dust-Free | 7 | 6 | 5 | 7 | 8 | Stamina | dense |
-| `fruit-scented` | Fruit-Scented Fancy Eraser | 2 | 4 | 6 | 2 | 4 | Wildcard | special is random each round |
+| `fruit-scented` | Fruit-Scented Fancy Eraser | 2 | 4 | 6 | 3 | 4 | Wildcard | special is random each round |
 
 ### Leads (tip) — stats 1–10
 | id | Name | Stability | Glide | Speed | Durability |
@@ -83,8 +83,8 @@ All parts are available from the start.
 | Doms Double | `doms-cubo` | `doms-y1` | base wobble −2 (cancels cube penalty), Stamina +1 |
 | Exam Hall | `camlin-dustfree` | `camlin-exam` | Stamina +2 |
 | Topper's Kit | `faber-dustfree` | `faber-2b` | Defense +2, Stability +1 |
-| Sugar Rush | `fruit-scented` | `apsara-platinum` | Speed +2, Stamina −2 |
-| Sleepy Bench | `apsara-jumbo` | `faber-2b` | Speed −2 |
+| Sugar Rush | `fruit-scented` | `apsara-platinum` | Speed +2, Stamina −1 |
+| Sleepy Bench | `apsara-jumbo` | `faber-2b` | Speed −2, Stability −2 |
 | Hindustan Family | any Apsara/Nataraj eraser | any Apsara/Nataraj lead | Stamina +1, Durability +1 |
 
 Stats are clamped to 1–10 after bonuses.
@@ -134,6 +134,13 @@ drain slower (see physics).
 `{x, y, vx, vy, rpm, wobble (0–1), leadSnapped, specialUsed, specialActiveUntil}`
 
 ### Each physics step (dt = 1/120 s)
+
+> **Tuned 2026-11-13 (build Task 9).** The formulas below were the starting point. The shipped
+> values live in `CONST` in `src/physics.js`, and `tools/balance.mjs` checks them. Changes from tuning:
+> bowl slope 0.7; drain 18 × (1 − 0.35·(Stamina−5)/10); wobble growth and hit wobble scale with
+> (1 − 0.5·(Stability−5)/10); hit damage = impact × 50 × (4+Atk)/(4+Def) × (0.5 + attacker spin)
+> × ram share (rammer 0.5–1.5) × mass factor^0.3 × ±25% luck; the rammed top takes most of the
+> wobble and snap stress; heavy tops shake less; snap at impact > 0.35 × Durability.
 - Steering intent (vector, length 0–1) adds acceleration ∝ Speed; while
   steering, rpm drains an extra `STEER_COST × |steer|` per second (starting
   value 2 % of maxRPM per second at full steer).
