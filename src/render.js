@@ -2,6 +2,7 @@
 import { computeLayout, arenaToScreen, screenToArenaVec, THALI_OUTER } from './layout.js';
 import { SPECIAL_NAMES } from './parts.js';
 import { LAUNCH, ringSize } from './launch.js';
+import { drawEraserTop, drawLeadTop, ERASER_ART } from './art.js';
 
 export { computeLayout, arenaToScreen, screenToArenaVec };
 
@@ -281,52 +282,9 @@ export function createRenderer(canvas) {
     ctx.translate(sx, sy);
   }
 
-  function bodyPath(spec, rpx) {
-    if (spec.shape === 'cube') {
-      const s = rpx * 1.5;
-      roundRect(ctx, -s / 2, -s / 2, s, s, rpx * 0.18);
-    } else if (spec.shape === 'pill') {
-      const w = rpx * 1.9, h = rpx * 1.1;
-      roundRect(ctx, -w / 2, -h / 2, w, h, h / 2);
-    } else {
-      const w = rpx * 1.9, h = rpx * 1.25;
-      roundRect(ctx, -w / 2, -h / 2, w, h, rpx * 0.25);
-    }
-  }
-
   function drawBody(spec, rpx, alpha) {
     ctx.globalAlpha = alpha;
-    bodyPath(spec, rpx);
-    const grad = ctx.createLinearGradient(-rpx, -rpx, rpx, rpx);
-    grad.addColorStop(0, shade(spec.color, 0.12));
-    grad.addColorStop(1, shade(spec.color, -0.14));
-    ctx.fillStyle = grad;
-    ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = 'rgba(0,0,0,0.28)';
-    ctx.stroke();
-    ctx.save();
-    bodyPath(spec, rpx);
-    ctx.clip();
-    if (spec.band) {
-      ctx.fillStyle = spec.band;
-      ctx.fillRect(-rpx * 0.25, -rpx * 2, rpx * 0.5, rpx * 4);
-      ctx.fillStyle = '#1d1d1d';
-      ctx.fillRect(-rpx * 0.25 - 2, -rpx * 2, 2, rpx * 4);
-      ctx.fillRect(rpx * 0.25, -rpx * 2, 2, rpx * 4);
-    }
-    if (spec.shape === 'cube') {
-      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-      ctx.lineWidth = 2;
-      roundRect(ctx, -rpx * 0.5, -rpx * 0.5, rpx, rpx, rpx * 0.12);
-      ctx.stroke();
-    }
-    // rubbed-off pencil smudge
-    ctx.fillStyle = 'rgba(60,60,70,0.10)';
-    ctx.beginPath();
-    ctx.ellipse(rpx * 0.45, -rpx * 0.2, rpx * 0.35, rpx * 0.18, 0.4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    drawEraserTop(ctx, spec.eraserId, rpx);
     ctx.globalAlpha = 1;
   }
 
@@ -377,8 +335,9 @@ export function createRenderer(canvas) {
       // spin blur disc
       const sweep = rpx * 1.14;
       const disc = ctx.createRadialGradient(0, 0, sweep * 0.2, 0, 0, sweep);
-      disc.addColorStop(0, shade(spec.color, -0.05));
-      disc.addColorStop(1, shade(spec.color, -0.2));
+      const art = ERASER_ART[spec.eraserId];
+      disc.addColorStop(0, shade(art.rubber, -0.04));
+      disc.addColorStop(1, shade(art.base, -0.1));
       ctx.globalAlpha = 0.25 + 0.45 * spin;
       ctx.beginPath();
       ctx.arc(0, 0, sweep, 0, Math.PI * 2);
@@ -395,23 +354,8 @@ export function createRenderer(canvas) {
       }
     }
     drawBody(spec, rpx, opts.ghost ? 0.55 : 1 - 0.55 * Math.max(0, spin - 0.2));
-    // lead poking through the top
-    ctx.beginPath();
-    ctx.arc(0, 0, rpx * 0.15, 0, Math.PI * 2);
-    ctx.fillStyle = '#e2bf86';
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(0, 0, rpx * 0.09, 0, Math.PI * 2);
-    ctx.fillStyle = t.leadSnapped ? '#8a8a90' : '#34343a';
-    ctx.fill();
-    if (t.leadSnapped) {
-      ctx.strokeStyle = '#b22';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(-rpx * 0.12, -rpx * 0.12); ctx.lineTo(rpx * 0.12, rpx * 0.12);
-      ctx.moveTo(rpx * 0.12, -rpx * 0.12); ctx.lineTo(-rpx * 0.12, rpx * 0.12);
-      ctx.stroke();
-    }
+    // the pencil stub through the middle
+    drawLeadTop(ctx, spec.leadId, rpx, t.leadSnapped);
     ctx.restore();
 
     if (t.dashUntil && opts.time !== undefined && opts.time < t.dashUntil) {

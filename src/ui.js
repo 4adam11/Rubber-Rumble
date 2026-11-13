@@ -23,20 +23,6 @@ function swatch(e) {
   return `<span class="swatch swatch-${e.shape}" style="--c:${e.color}">${band}</span>`;
 }
 
-const DOODLE = `
-<svg class="doodle" viewBox="0 0 160 120" aria-hidden="true">
-  <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M30 70 q50 -18 100 0" opacity=".35"/>
-    <path d="M22 80 q58 -26 116 0" opacity=".2"/>
-    <rect x="48" y="28" width="64" height="40" rx="9" fill="#f4f1ea"/>
-    <rect x="66" y="28" width="16" height="40" fill="#d6342c" stroke="none"/>
-    <rect x="48" y="28" width="64" height="40" rx="9"/>
-    <path d="M80 68 L80 92" stroke-width="5"/>
-    <path d="M76 92 L80 104 L84 92 Z" fill="currentColor"/>
-    <path d="M20 46 q-8 10 2 20 M140 46 q8 10 -2 20" opacity=".6"/>
-    <path d="M12 40 q-10 16 4 30 M148 40 q10 16 -4 30" opacity=".35"/>
-  </g>
-</svg>`;
 
 export const RESULT_GUARD_MS = 400;
 
@@ -75,7 +61,7 @@ export function createUI(root, handlers, opts = {}) {
   function title(d) {
     mount('title', `
       <div class="sheet sheet-title">
-        <div class="title-art">${DOODLE}</div>
+        <img class="title-art" src="assets/icon.svg" alt="Rubber Rumble logo" width="120" height="120">
         <h1 class="logo">Rubber <span>Rumble</span></h1>
         <p class="tagline">Eraser top. Pencil-lead tip. One steel thali. Last one spinning wins.</p>
         <div class="stack">

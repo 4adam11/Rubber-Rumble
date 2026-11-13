@@ -5,7 +5,7 @@ export const ERASERS = [
   { id: 'apsara-nondust', name: 'Apsara Non-Dust', mass: 5, size: 5, attack: 6, defense: 6, stamina: 6, archetype: 'balance', shape: 'rect', color: '#f4f1ea', note: 'Soft and grippy all-rounder' },
   { id: 'apsara-jumbo', name: 'Apsara Jumbo', mass: 9, size: 8, attack: 4, defense: 9, stamina: 6, archetype: 'defense', shape: 'rect', color: '#e9e4f5', note: 'Big, heavy wall' },
   { id: 'nataraj-621', name: 'Nataraj 621 Plasto', mass: 3, size: 4, attack: 8, defense: 3, stamina: 5, archetype: 'attack', shape: 'rect', color: '#ffffff', band: '#d6342c', note: 'Hard and light, fast attacker' },
-  { id: 'doms-cubo', name: 'Doms Cubo', mass: 5, size: 5, attack: 9, defense: 4, stamina: 4, archetype: 'attack', shape: 'cube', color: '#3b82c4', note: 'Corners hit hard, but it wobbles' },
+  { id: 'doms-cubo', name: 'Doms Neon Hexagon', mass: 5, size: 5, attack: 9, defense: 4, stamina: 4, archetype: 'attack', shape: 'hex', color: '#ff6a1a', note: 'Hex corners hit hard, but it wobbles' },
   { id: 'camlin-dustfree', name: 'Camlin Dust-Free', mass: 5, size: 5, attack: 5, defense: 5, stamina: 8, archetype: 'stamina', shape: 'rect', color: '#f2d36b', note: 'Steady spinner' },
   { id: 'faber-dustfree', name: 'Faber-Castell Dust-Free', mass: 7, size: 6, attack: 5, defense: 7, stamina: 8, archetype: 'stamina', shape: 'rect', color: '#9ccf8e', note: 'Dense stamina tank' },
   { id: 'fruit-scented', name: 'Fruit-Scented Fancy Eraser', mass: 2, size: 4, attack: 6, defense: 3, stamina: 4, archetype: 'wildcard', shape: 'pill', color: '#ff8fb1', note: 'Unpredictable — random special' },
@@ -23,7 +23,7 @@ export const LEADS = [
 // Checked in this order; first match wins.
 export const COMBOS = [
   { id: 'deadly-duo', name: 'Deadly Duo', desc: 'Attack +2, Stability +1', bad: false, erasers: ['apsara-nondust', 'apsara-jumbo'], leads: ['nataraj-hb'], mods: { attack: 2, stability: 1 } },
-  { id: 'doms-double', name: 'Doms Double', desc: 'Cube wobble cancelled, Stamina +1', bad: false, erasers: ['doms-cubo'], leads: ['doms-y1'], mods: { baseWobble: -2, stamina: 1 } },
+  { id: 'doms-double', name: 'Doms Double', desc: 'Hex wobble cancelled, Stamina +1', bad: false, erasers: ['doms-cubo'], leads: ['doms-y1'], mods: { baseWobble: -2, stamina: 1 } },
   { id: 'exam-hall', name: 'Exam Hall', desc: 'Stamina +2', bad: false, erasers: ['camlin-dustfree'], leads: ['camlin-exam'], mods: { stamina: 2 } },
   { id: 'toppers-kit', name: "Topper's Kit", desc: 'Defense +2, Stability +1', bad: false, erasers: ['faber-dustfree'], leads: ['faber-2b'], mods: { defense: 2, stability: 1 } },
   { id: 'sugar-rush', name: 'Sugar Rush', desc: 'Speed +2, Stamina −1', bad: false, erasers: ['fruit-scented'], leads: ['apsara-platinum'], mods: { speed: 2, stamina: -1 } },

@@ -97,8 +97,7 @@ html, body {
 .logo { font-size: clamp(44px, 12vw, 64px); color: var(--ink); transform: rotate(-2deg); }
 .logo span { color: var(--p2); }
 .tagline { font-family: var(--hand); font-size: 18px; }
-.title-art { color: var(--ink); width: 150px; margin: -6px auto 2px; }
-.title-art svg { width: 100%; height: auto; display: block; animation: wobble 2.8s ease-in-out infinite; }
+.title-art { display: block; width: 120px; height: 120px; margin: -4px auto 8px; border-radius: 26px; box-shadow: 4px 4px 0 var(--ink); animation: wobble 2.8s ease-in-out infinite; }
 @keyframes wobble { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
 .sheet-title { text-align: center; }
 
@@ -262,7 +261,7 @@ kbd {
 }
 
 @media (max-height: 620px) {
-  .title-art { width: 96px; margin-top: -10px; }
+  .title-art { width: 76px; height: 76px; border-radius: 17px; margin-top: -8px; }
   .logo { font-size: 42px; margin-bottom: 6px; }
   .sheet { padding-top: 20px; padding-bottom: 14px; }
   .stack { gap: 8px; }
@@ -297,5 +296,5 @@ kbd {
   .sheet h2 { font-size: 26px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .screen, .sheet, .title-art svg { animation: none; }
+  .screen, .sheet, .title-art { animation: none; }
 }

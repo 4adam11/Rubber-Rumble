@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#ffe066"/>
+  <g fill="none" stroke="#1f2a44" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 22 q-5 7 1 14 M55 22 q5 7 -1 14" stroke-width="3.5" opacity=".55"/>
+    <path d="M15 44 q17 -7 34 0" stroke-width="3" opacity=".4"/>
+  </g>
+  <clipPath id="body"><rect x="14" y="11" width="36" height="25" rx="6"/></clipPath>
+  <rect x="14" y="11" width="36" height="25" rx="6" fill="#fffdf6"/>
+  <g clip-path="url(#body)">
+    <rect x="26" y="8" width="12" height="32" fill="#d6342c"/>
+    <rect x="26" y="8" width="2" height="32" fill="#1f2a44"/>
+    <rect x="36" y="8" width="2" height="32" fill="#1f2a44"/>
+  </g>
+  <rect x="14" y="11" width="36" height="25" rx="6" fill="none" stroke="#1f2a44" stroke-width="3.5"/>
+  <path d="M32 36 V48" stroke="#e2bf86" stroke-width="7" stroke-linecap="round"/>
+  <path d="M28 47 L32 57 L36 47 Z" fill="#1f2a44" stroke="#1f2a44" stroke-width="2" stroke-linejoin="round"/>
+</svg>
