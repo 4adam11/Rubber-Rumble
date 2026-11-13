@@ -39,8 +39,15 @@ function thumb(key, w, h, draw) {
   thumbCache.set(key, url);
   return url;
 }
-const eraserThumb = (id) => thumb(`e:${id}`, 64, 40, (g) => { g.translate(32, 22); drawEraserSide(g, id, 46); });
-const pencilThumb = (id) => thumb(`p:${id}`, 72, 20, (g) => drawPencil(g, id, 2, 10, 68, 10));
+// big product shots for the pencil-box picker
+const eraserThumb = (id) => thumb(`e2:${id}`, 150, 100, (g) => { g.translate(70, 54); drawEraserSide(g, id, 112); });
+// pencils stand upright in the cup, tip up
+const pencilThumb = (id) => thumb(`p2:${id}`, 40, 210, (g) => { g.translate(20, 206); g.rotate(-Math.PI / 2); drawPencil(g, id, 0, 0, 200, 24); });
+const SHORT_LEAD = {
+  'nataraj-hb': 'Nataraj HB', 'apsara-platinum': 'Platinum', 'apsara-absolute': 'Absolute',
+  'doms-y1': 'Doms Y1+', 'camlin-exam': 'Camlin Exam', 'faber-2b': 'Faber 2B',
+};
+const ARCH_ICON = { attack: '⚔', defense: '🛡', stamina: '⏳', balance: '⚖', wildcard: '🎲' };
 const arenaThumb = (id) => thumb(`a:${id}`, 120, 120, (g) => paintArenaThumb(g, 120, id));
 
 
@@ -112,18 +119,25 @@ export function createUI(root, handlers, opts = {}) {
       </div>`, 'with-backdrop');
   }
 
+  // Option A stat gauges: a coloured pencil per stat, its length is the value.
   function statRows(card) {
-    return STATS.map(([k, label]) => {
-      const v = card[k];
-      const cells = Array.from({ length: 10 }, (_, i) => `<i class="${i < v ? 'on' : ''}"></i>`).join('');
-      return `<div class="stat" data-stat="${k}"><span>${label}</span><b>${cells}</b><em>${v}</em><sup class="delta"></sup></div>`;
-    }).join('');
+    return STATS.map(([k, label]) => `
+      <div class="pg-row" data-stat="${k}">
+        <span>${label}</span>
+        <div class="pg-track"><div class="pg-pencil" style="width:${card[k] * 10}%"><i class="pg-body"></i><i class="pg-tip"></i></div></div>
+        <em>${card[k]}</em><sup class="delta"></sup>
+      </div>`).join('');
   }
 
   function comboHtml(spec) {
     return spec.combo
-      ? `<div class="combo ${spec.combo.bad ? 'combo-bad' : ''}"><strong>${spec.combo.bad ? '⚠ ' : '★ '}${esc(spec.combo.name)}</strong><span>${esc(spec.combo.desc)}</span></div>`
-      : '<div class="combo combo-none"><span>No combo bonus. Try matching brands!</span></div>';
+      ? `<div class="sticky ${spec.combo.bad ? 'sticky-bad' : ''}"><strong>${spec.combo.bad ? '⚠ ' : '★ '}${esc(spec.combo.name)}</strong><span>${esc(spec.combo.desc)}</span></div>`
+      : '<div class="sticky sticky-none"><span>No combo yet. Try matching brands!</span></div>';
+  }
+
+  function leadLabel(id) {
+    const l = LEADS.find((x) => x.id === id);
+    return `<b>${esc(l.name)}</b> · ${esc(l.note)}`;
   }
 
   // Built once; picking a part only updates what changed.
@@ -131,72 +145,127 @@ export function createUI(root, handlers, opts = {}) {
     const d = picker;
     const spec = buildTop(d.eraserId, d.leadId);
     d.card = spec.card;
+    d.drop = { t0: now() };
     mount('picker', `
-      <div class="sheet sheet-picker" style="--pc:${d.color}">
+      <div class="sheet sheet-picker pbox" style="--pc:${d.color}">
         <header class="picker-head">
           <h2><span class="who" style="color:${d.color}">${esc(d.who)}</span> build your top</h2>
           ${d.note ? `<p class="note">${esc(d.note)}</p>` : ''}
         </header>
-        <div class="picker-body">
-          <section class="parts">
-            <h3>Eraser <small>the body</small></h3>
-            <div class="chips">
+        <div class="pb-top">
+          <div class="stage">
+            <canvas class="stage-canvas" width="320" height="220" aria-hidden="true"></canvas>
+            <div class="stage-name">${esc(spec.eraserName)} <span>+</span> ${esc(spec.leadName)}</div>
+            <div class="combo-slot">${comboHtml(spec)}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-title">Stats</div>
+            <div class="pg">${statRows(spec.card)}</div>
+          </div>
+        </div>
+        <div class="pb-trays">
+          <section class="tray">
+            <div class="tape">Erasers <small>the body</small></div>
+            <div class="slots">
               ${ERASERS.map((e) => `
-                <button class="chip ${e.id === d.eraserId ? 'is-on' : ''}" data-action="pick-eraser" data-value="${e.id}" aria-pressed="${e.id === d.eraserId}">
-                  <img class="part-img" src="${eraserThumb(e.id)}" alt=""><span class="chip-text"><b>${esc(e.name)}</b><small>${ARCH[e.archetype]} · ${esc(e.note)}</small></span>
-                </button>`).join('')}
-            </div>
-            <h3>Pencil lead <small>the tip</small></h3>
-            <div class="chips">
-              ${LEADS.map((l) => `
-                <button class="chip ${l.id === d.leadId ? 'is-on' : ''}" data-action="pick-lead" data-value="${l.id}" aria-pressed="${l.id === d.leadId}">
-                  <img class="part-img part-img-pencil" src="${pencilThumb(l.id)}" alt=""><span class="chip-text"><b>${esc(l.name)}</b><small>${esc(l.note)}</small></span>
+                <button class="slot ${e.id === d.eraserId ? 'is-on' : ''}" data-action="pick-eraser" data-value="${e.id}" aria-pressed="${e.id === d.eraserId}" title="${esc(e.note)}">
+                  <img src="${eraserThumb(e.id)}" alt="" width="150" height="100">
+                  <span class="slot-name">${esc(e.name)}</span>
+                  <span class="slot-type">${ARCH_ICON[e.archetype]} ${ARCH[e.archetype]}</span>
                 </button>`).join('')}
             </div>
           </section>
-          <aside class="card">
-            <div class="card-top">
-              <canvas class="preview" width="150" height="110" aria-hidden="true"></canvas>
-              <div class="card-title">${esc(spec.eraserName)} <span>+</span> ${esc(spec.leadName)}</div>
+          <section class="cup">
+            <div class="tape">Pencil leads <small>the tip</small></div>
+            <div class="cup-pencils">
+              ${LEADS.map((l) => `
+                <button class="cup-pencil ${l.id === d.leadId ? 'is-on' : ''}" data-action="pick-lead" data-value="${l.id}" aria-pressed="${l.id === d.leadId}" aria-label="${esc(l.name)}">
+                  <img src="${pencilThumb(l.id)}" alt="" width="40" height="210">
+                  <span>${esc(SHORT_LEAD[l.id] || l.name)}</span>
+                </button>`).join('')}
+              <div class="cup-front" aria-hidden="true"></div>
             </div>
-            <div class="combo-slot">${comboHtml(spec)}</div>
-            <div class="stats">${statRows(spec.card)}</div>
-            <div class="row">
-              <button class="btn btn-ghost" data-action="back">← Back</button>
-              <button class="btn btn-primary" data-action="ready">Ready!</button>
-            </div>
-          </aside>
+            <p class="lead-label">${leadLabel(d.leadId)}</p>
+          </section>
+        </div>
+        <div class="row sticky-row">
+          <button class="btn btn-ghost" data-action="back">← Back</button>
+          <button class="btn btn-primary" data-action="ready">Ready!</button>
         </div>
       </div>`, 'with-backdrop');
-    drawPreview(spec);
+    runStage();
   }
 
-  function drawPreview(spec) {
-    const c = root.querySelector('.preview');
+  // The spotlit stage: the top drops in on every change, then bobs and twirls.
+  let stageLoop = 0;
+  function runStage() {
+    cancelAnimationFrame(stageLoop);
+    const c = root.querySelector('.stage-canvas');
     if (!c || !c.getContext) return;
     const dpr = Math.min(2, devicePixelRatio || 1);
-    c.width = 150 * dpr;
-    c.height = 110 * dpr;
+    c.width = 320 * dpr;
+    c.height = 220 * dpr;
     const g = c.getContext('2d');
-    g.scale(dpr, dpr);
-    g.translate(75, 40);
-    drawTopSide(g, spec.eraserId, spec.leadId, 108);
+    const frame = () => {
+      if (current !== 'picker') return;
+      const d = picker;
+      const t = (now() - d.drop.t0) / 1000;
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.clearRect(0, 0, 320, 220);
+      // spotlight on a little steel plate
+      const spot = g.createRadialGradient(160, 168, 10, 160, 168, 150);
+      spot.addColorStop(0, 'rgba(255,255,255,0.9)');
+      spot.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = spot;
+      g.fillRect(0, 0, 320, 220);
+      const plate = g.createLinearGradient(80, 160, 240, 190);
+      plate.addColorStop(0, '#f4f6f8'); plate.addColorStop(0.5, '#c3cad1'); plate.addColorStop(1, '#eef1f4');
+      g.beginPath(); g.ellipse(160, 182, 112, 22, 0, 0, Math.PI * 2); g.fillStyle = '#9aa3ad'; g.fill();
+      g.beginPath(); g.ellipse(160, 180, 104, 18, 0, 0, Math.PI * 2); g.fillStyle = plate; g.fill();
+      // drop-in with a bounce, then idle bob + wobble
+      const drop = t < 0.55 ? -90 * (1 - t / 0.55) ** 2 * Math.cos(t * 9) : 0;
+      const bob = Math.sin(t * 2.4) * 3;
+      g.save();
+      g.translate(160, 62 + drop + bob);
+      g.rotate(Math.sin(t * 3.1) * 0.05);
+      drawTopSide(g, d.eraserId, d.leadId, 170);
+      g.restore();
+      // spin lines round the lead tip
+      g.strokeStyle = 'rgba(31,42,68,0.25)';
+      g.lineWidth = 2;
+      for (let k = 0; k < 2; k++) {
+        const a0 = t * 5 + k * Math.PI;
+        g.beginPath();
+        g.ellipse(160, 172, 30 + k * 10, 6 + k * 2, 0, a0, a0 + 1.4);
+        g.stroke();
+      }
+      if (t < 0.7 && t > 0.45) { // dust puff on landing
+        const k = (t - 0.45) / 0.25;
+        g.fillStyle = `rgba(160,140,110,${0.35 * (1 - k)})`;
+        for (const sx of [-1, 1]) { g.beginPath(); g.arc(160 + sx * (24 + k * 30), 176 - k * 6, 6 + k * 6, 0, Math.PI * 2); g.fill(); }
+      }
+      stageLoop = requestAnimationFrame(frame);
+    };
+    frame();
   }
 
-  // Swap one part: move the highlight, refill the bars, pop the combo.
+  // Swap one part: lift the new pick, drop the new top on the stage, grow/shrink the gauges.
   function updatePicker(kind, value) {
     const d = picker;
     if (kind === 'eraser') d.eraserId = value; else d.leadId = value;
     const spec = buildTop(d.eraserId, d.leadId);
     const changes = statChanges(d.card, spec.card);
     d.card = spec.card;
+    d.drop = { t0: now() };
 
     root.querySelectorAll(`[data-action="pick-${kind}"]`).forEach((b) => {
       const on = b.dataset.value === value;
       b.classList.toggle('is-on', on);
       b.setAttribute('aria-pressed', String(on));
     });
-    root.querySelector('.card-title').innerHTML = `${esc(spec.eraserName)} <span>+</span> ${esc(spec.leadName)}`;
+    root.querySelector('.stage-name').innerHTML = `${esc(spec.eraserName)} <span>+</span> ${esc(spec.leadName)}`;
+    const ll = root.querySelector('.lead-label');
+    if (ll) ll.innerHTML = leadLabel(d.leadId);
 
     const slot = root.querySelector('.combo-slot');
     const before = slot.textContent;
@@ -204,14 +273,9 @@ export function createUI(root, handlers, opts = {}) {
     if (slot.textContent !== before) restartAnim(slot.firstElementChild, 'pop');
 
     for (const ch of changes) {
-      const row = root.querySelector(`.stat[data-stat="${ch.key}"]`);
+      const row = root.querySelector(`.pg-row[data-stat="${ch.key}"]`);
       if (!row) continue;
-      row.querySelectorAll('i').forEach((cell, i) => {
-        // fill upward one cell after another, empty downward
-        const delay = ch.delta > 0 ? (i - ch.from) * 45 : (ch.from - 1 - i) * 45;
-        cell.style.transitionDelay = `${Math.max(0, delay)}ms`;
-        cell.classList.toggle('on', i < ch.to);
-      });
+      row.querySelector('.pg-pencil').style.width = `${ch.to * 10}%`;
       row.querySelector('em').textContent = ch.to;
       const badge = row.querySelector('.delta');
       if (ch.delta) {
@@ -220,8 +284,6 @@ export function createUI(root, handlers, opts = {}) {
         restartAnim(badge, 'show');
       }
     }
-    drawPreview(spec);
-    restartAnim(root.querySelector('.preview'), 'bounce');
   }
 
   function restartAnim(el, cls) {

@@ -249,166 +249,405 @@ export function drawLeadTop(ctx, id, r, snapped) {
   }
 }
 
+// ---------- print on sleeves and pencils (plain words only, no brand names) ----------
+const ERASER_PRINT = {
+  'apsara-nondust': { big: 'non dust', small: 'eraser' },
+  'apsara-jumbo': { big: 'JUMBO', small: 'non dust eraser' },
+  'nataraj-621': { big: 'ERASER', small: '621 · plastic' },
+  'camlin-dustfree': { big: 'XL ERASER', small: 'all clear' },
+  'faber-dustfree': { big: 'DUST-FREE', small: 'non-toxic' },
+  'fruit-scented': { big: '', small: '' },
+  'doms-cubo': { big: 'neon', small: 'eraser' },
+};
+const LEAD_PRINT = {
+  'nataraj-hb': { text: '621  HB  ★★ BOLD ★', pattern: 'lines' },
+  'apsara-platinum': { text: 'PLATINUM  EXTRA DARK', pattern: 'facets' },
+  'apsara-absolute': { text: 'ABSOLUTE  HB  BREAK-PROOF', pattern: 'lines' },
+  'doms-y1': { text: 'Y1+  HB/2', pattern: 'solid' },
+  'camlin-exam': { text: 'EXAM  HB  ✓', pattern: 'solid' },
+  'faber-2b': { text: '9000  2B', pattern: 'solid' },
+};
+
+function seeded(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function speckle(ctx, x, y, w, h, n, seed) {
+  const rnd = seeded(seed);
+  ctx.fillStyle = 'rgba(90,90,100,0.18)';
+  for (let i = 0; i < n; i++) {
+    ctx.beginPath();
+    ctx.arc(x + rnd() * w, y + rnd() * h, 0.4 + rnd() * 0.7, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function text(ctx, str, x, y, size, color, weight = 800, align = 'left', font = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif') {
+  if (!str) return;
+  ctx.font = `${weight} ${Math.max(5, size)}px ${font}`;
+  ctx.textAlign = align;
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = color;
+  ctx.fillText(str, x, y);
+}
+
+// The printed sleeve as seen on the front face of the eraser (box x..x+w, y..y+h).
+function sleeveFront(ctx, id, a, x, y, w, h) {
+  const p = ERASER_PRINT[id] || {};
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  switch (a.sleeve) {
+    case 'apsara': {
+      const g = ctx.createLinearGradient(x, y, x, y + h);
+      g.addColorStop(0, shade(a.base, 0.08));
+      g.addColorStop(1, shade(a.base, -0.08));
+      ctx.fillStyle = g;
+      ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = a.accent; // diagonal flash
+      ctx.beginPath();
+      ctx.moveTo(x + w * 0.42, y + h); ctx.lineTo(x + w * 0.62, y + h);
+      ctx.lineTo(x + w * 0.98, y); ctx.lineTo(x + w * 0.78, y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.save();
+      ctx.translate(x + w * 0.68, y + h * 0.5);
+      ctx.rotate(-0.95);
+      text(ctx, p.big, 0, -h * 0.02, h * 0.2, '#ffffff', 900, 'center');
+      text(ctx, p.small, 0, h * 0.17, h * 0.12, '#ffffff', 700, 'center');
+      ctx.restore();
+      ctx.fillStyle = '#ffffff'; // barcode label
+      ctx.fillRect(x + w * 0.06, y + h * 0.56, w * 0.3, h * 0.3);
+      ctx.fillStyle = '#222';
+      const rnd = seeded(7);
+      for (let i = 0; i < 16; i++) ctx.fillRect(x + w * 0.08 + i * w * 0.016, y + h * 0.6, w * (0.004 + rnd() * 0.008), h * 0.17);
+      text(ctx, 'for neat & clean erasing', x + w * 0.06, y + h * 0.32, h * 0.11, '#ffffff', 700);
+      break;
+    }
+    case 'band': {
+      const bx = x + w * 0.12, bw = w * 0.7;
+      ctx.fillStyle = a.base;
+      ctx.fillRect(bx, y, bw, h);
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.fillRect(bx, y, bw, h * 0.25);
+      text(ctx, p.big, bx + bw / 2, y + h * 0.4, h * 0.27, '#ffffff', 900, 'center');
+      text(ctx, p.small, bx + bw / 2, y + h * 0.72, h * 0.16, '#ffffff', 800, 'center');
+      break;
+    }
+    case 'camlin': {
+      ctx.fillStyle = a.base;
+      ctx.fillRect(x, y, w, h);
+      const blob = (cx, cy, r, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill(); };
+      blob(x + w * 0.84, y + h * 0.3, h * 0.42, '#c2185b');
+      blob(x + w * 0.98, y + h * 0.75, h * 0.38, '#7b1fa2');
+      blob(x + w * 0.76, y + h * 0.86, h * 0.24, '#ff8f00');
+      text(ctx, p.big, x + w * 0.06, y + h * 0.42, h * 0.2, '#d63a2f', 900);
+      text(ctx, p.small.toUpperCase(), x + w * 0.06, y + h * 0.66, h * 0.13, '#222', 800);
+      ctx.fillStyle = '#222';
+      ctx.fillRect(x + w * 0.06, y + h * 0.16, w * 0.38, h * 0.1);
+      break;
+    }
+    case 'faber': {
+      const g = ctx.createLinearGradient(x, y, x, y + h);
+      g.addColorStop(0, shade(a.base, 0.06));
+      g.addColorStop(1, shade(a.base, -0.1));
+      ctx.fillStyle = g;
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = Math.max(1, h * 0.03);
+      ctx.strokeRect(x + w * 0.05, y + h * 0.12, w * 0.9, h * 0.76);
+      text(ctx, p.big, x + w * 0.1, y + h * 0.38, h * 0.21, '#ffffff', 900);
+      text(ctx, p.small, x + w * 0.1, y + h * 0.66, h * 0.12, '#ffffff', 700);
+      ctx.beginPath(); // arrow motif
+      ctx.moveTo(x + w * 0.66, y + h * 0.42); ctx.lineTo(x + w * 0.88, y + h * 0.42); ctx.lineTo(x + w * 0.82, y + h * 0.32);
+      ctx.moveTo(x + w * 0.88, y + h * 0.42); ctx.lineTo(x + w * 0.82, y + h * 0.52);
+      ctx.stroke();
+      break;
+    }
+  }
+  // sleeve shading: rounds it over the edges
+  const sh = ctx.createLinearGradient(x, y, x, y + h);
+  sh.addColorStop(0, 'rgba(255,255,255,0.22)');
+  sh.addColorStop(0.2, 'rgba(255,255,255,0)');
+  sh.addColorStop(1, 'rgba(0,0,0,0.12)');
+  ctx.fillStyle = sh;
+  ctx.fillRect(x, y, w, h);
+  ctx.restore();
+}
+
 // ---------- a whole pencil, lying flat, tip to the right ----------
 export function drawPencil(ctx, id, x, y, len, th) {
   const L = LEAD_ART[id];
   if (!L) return;
-  const tipLen = len * 0.16, endLen = len * 0.07;
+  const P = LEAD_PRINT[id] || { pattern: 'solid', text: '' };
+  const tipLen = Math.min(len * 0.17, th * 3.2), endLen = len * 0.07;
   const bx0 = x + endLen, bx1 = x + len - tipLen;
   const top = y - th / 2;
+  const facets = [[0, 0.3, 0.2], [0.3, 0.4, 0], [0.7, 0.3, -0.2]];
 
-  // barrel with three hex facets
-  const facets = [[0, 0.32, 0.18], [0.32, 0.36, 0], [0.68, 0.32, -0.16]];
-  for (const [f0, fh, amt] of facets) {
-    ctx.fillStyle = shade(L.barrel, amt);
-    ctx.fillRect(bx0, top + th * f0, bx1 - bx0, th * fh + 0.5);
+  // soft shadow on the desk
+  ctx.fillStyle = 'rgba(0,0,0,0.16)';
+  rr(ctx, x + 3, top + th * 0.55, len - 3, th * 0.7, th * 0.35);
+  ctx.fill();
+
+  // barrel facets
+  facets.forEach(([f0, fh, amt], k) => {
+    let col = L.barrel;
+    if (P.pattern === 'facets' && k !== 1) col = L.stripe;
+    ctx.fillStyle = shade(col, amt);
+    ctx.fillRect(bx0, top + th * f0, bx1 - bx0, th * fh + 0.6);
+  });
+  if (P.pattern === 'lines') {
+    const sw = Math.max(1, th * (L.stripeW || 0.08));
+    ctx.fillStyle = L.stripe;
+    ctx.fillRect(bx0, top + th * 0.3 - sw / 2, bx1 - bx0, sw);
+    ctx.fillRect(bx0, top + th * 0.7 - sw / 2, bx1 - bx0, sw);
   }
-  ctx.fillStyle = L.stripe; // facet stripes (Nataraj red lines etc.)
-  const sw = Math.max(1, th * (L.stripeW || 0.05));
-  ctx.fillRect(bx0, top + th * 0.3 - sw / 2, bx1 - bx0, sw);
-  ctx.fillRect(bx0, top + th * 0.68 - sw / 2, bx1 - bx0, sw);
-  printBars(ctx, bx0 + (bx1 - bx0) * 0.35, top + th * 0.42, (bx1 - bx0) * 0.3, th * 0.12, L.label, 1);
+  // facet seams + top shine
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fillRect(bx0, top + th * 0.3, bx1 - bx0, 0.7);
+  ctx.fillRect(bx0, top + th * 0.7, bx1 - bx0, 0.7);
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.fillRect(bx0, top + th * 0.08, bx1 - bx0, Math.max(1, th * 0.07));
+  // foil print
+  if (P.text && th >= 8) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(bx0, top, bx1 - bx0, th);
+    ctx.clip();
+    text(ctx, P.text, bx0 + (bx1 - bx0) * 0.3, y + 0.5, th * 0.32, L.label, 800);
+    ctx.restore();
+  }
 
   // end
   if (L.end === 'ferrule') {
-    ctx.fillStyle = L.endColor;
+    const g = ctx.createLinearGradient(0, top, 0, top + th);
+    g.addColorStop(0, '#fff1b8'); g.addColorStop(0.4, L.endColor); g.addColorStop(1, shade(L.endColor, -0.25));
+    ctx.fillStyle = g;
     ctx.fillRect(x, top, endLen, th);
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
     for (let i = 1; i < 4; i++) ctx.fillRect(x + (endLen * i) / 4, top, 1, th);
   } else {
-    ctx.fillStyle = L.endColor;
-    rr(ctx, x, top, endLen + 2, th, th * 0.18);
+    const g = ctx.createLinearGradient(0, top, 0, top + th);
+    g.addColorStop(0, shade(L.endColor, 0.22)); g.addColorStop(0.45, L.endColor); g.addColorStop(1, shade(L.endColor, -0.2));
+    ctx.fillStyle = g;
+    rr(ctx, x, top, endLen + 2, th, th * 0.22);
     ctx.fill();
-    if (L.end === 'cap') {
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      ctx.fillRect(x + 2, top + th * 0.15, endLen - 2, th * 0.18);
+    ctx.fillStyle = 'rgba(255,255,255,0.45)'; // gloss
+    ctx.fillRect(x + 2, top + th * 0.12, endLen - 2, th * 0.14);
+    if (L.end === 'dip') { // dipped paint edge
+      ctx.fillStyle = shade(L.endColor, 0.1);
+      ctx.fillRect(bx0 - 1, top, 2, th);
     }
   }
 
-  // sharpened wood cone with a scalloped edge
+  // sharpened wood cone, scalloped where the paint ends, with grain
+  const coneEnd = x + len - tipLen * 0.3;
   ctx.beginPath();
   ctx.moveTo(bx1, top);
-  for (let i = 0; i <= 4; i++) ctx.quadraticCurveTo(bx1 + tipLen * 0.12, top + (th * (i + 0.5)) / 5, bx1, top + (th * (i + 1)) / 5);
-  ctx.lineTo(x + len - tipLen * 0.3, y + th * 0.1);
-  ctx.lineTo(x + len - tipLen * 0.3, y - th * 0.1);
+  for (let i = 0; i <= 4; i++) ctx.quadraticCurveTo(bx1 + tipLen * 0.14, top + (th * (i + 0.5)) / 5, bx1, top + (th * (i + 1)) / 5);
+  ctx.lineTo(coneEnd, y + th * 0.1);
+  ctx.lineTo(coneEnd, y - th * 0.1);
   ctx.closePath();
-  ctx.fillStyle = WOOD;
+  const wg = ctx.createLinearGradient(0, top, 0, top + th);
+  wg.addColorStop(0, '#f6dcb2'); wg.addColorStop(0.5, WOOD); wg.addColorStop(1, WOOD_DARK);
+  ctx.fillStyle = wg;
   ctx.fill();
-  ctx.fillStyle = 'rgba(160,110,50,0.25)';
+  ctx.strokeStyle = 'rgba(150,100,40,0.35)';
+  ctx.lineWidth = 0.8;
+  for (let i = 1; i <= 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(bx1 + tipLen * 0.1, top + (th * i) / 4);
+    ctx.lineTo(coneEnd, y + (i - 2) * th * 0.03);
+    ctx.stroke();
+  }
+  // graphite point with a glint
   ctx.beginPath();
-  ctx.moveTo(bx1, y);
-  ctx.lineTo(x + len - tipLen * 0.3, y + th * 0.1);
-  ctx.lineTo(bx1, top + th);
-  ctx.fill();
-  // graphite tip
-  ctx.beginPath();
-  ctx.moveTo(x + len - tipLen * 0.3, y - th * 0.1);
+  ctx.moveTo(coneEnd, y - th * 0.1);
   ctx.lineTo(x + len, y);
-  ctx.lineTo(x + len - tipLen * 0.3, y + th * 0.1);
+  ctx.lineTo(coneEnd, y + th * 0.1);
   ctx.closePath();
   ctx.fillStyle = GRAPHITE;
   ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  ctx.fillRect(coneEnd, y - th * 0.05, tipLen * 0.15, Math.max(0.8, th * 0.04));
 
-  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+  ctx.lineWidth = 0.8;
   ctx.strokeRect(bx0, top, bx1 - bx0, th);
 }
 
-// ---------- erasers, 3/4 view (menus, intro) ----------
+// ---------- erasers as product shots, 3/4 view (menus, intro) ----------
 export function drawEraserSide(ctx, id, width) {
   const a = ERASER_ART[id];
   if (!a) return;
   if (a.shape === 'hex') return neonHexSide(ctx, a, width);
-  const w = width, h = width * 0.34, d = width * 0.2; // front face w×h, depth skew d
-  const x = -w / 2 - d / 2, y = -h / 2 + d / 2;
   const round = a.shape === 'pill';
+  const w = width * (a.w / 1.95), h = width * 0.34 * (a.h / 1.12);
+  const dx = width * 0.15, dy = width * 0.11; // depth offset for the top face
+  const x = -w / 2 - dx / 2, y = -h / 2 + dy / 2;
+  const s0 = x + w * 0.36; // sleeve starts here (rubber end on the left, like the photos)
+
+  // shadow on the desk
+  const sg = ctx.createRadialGradient(x + w / 2 + dx / 2, y + h + 2, 2, x + w / 2 + dx / 2, y + h + 2, w * 0.65);
+  sg.addColorStop(0, 'rgba(0,0,0,0.28)');
+  sg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = sg;
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2 + dx / 2, y + h + 1, w * 0.62, h * 0.32, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (round) {
+    // a squishy pill: top ellipse + body
+    const body = ctx.createLinearGradient(0, y - dy, 0, y + h);
+    body.addColorStop(0, shade(a.rubber, 0.12));
+    body.addColorStop(1, shade(a.rubber, -0.18));
+    rr(ctx, x, y - dy * 0.5, w + dx, h + dy * 0.5, (h + dy * 0.5) / 2);
+    ctx.fillStyle = body;
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    rr(ctx, x + w * 0.12, y - dy * 0.3, w * 0.55, h * 0.22, h * 0.11);
+    ctx.fill();
+    const rnd = seeded(31);
+    ctx.fillStyle = a.accent;
+    for (let i = 0; i < 14; i++) {
+      ctx.beginPath();
+      ctx.ellipse(x + w * 0.1 + rnd() * (w * 0.9), y + rnd() * h * 0.85, w * 0.012, w * 0.02, 0.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#3c9a3c';
+    ctx.beginPath();
+    ctx.ellipse(x + w * 0.06, y + h * 0.25, w * 0.07, w * 0.03, -0.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(120,30,60,0.35)';
+    ctx.lineWidth = 1;
+    rr(ctx, x, y - dy * 0.5, w + dx, h + dy * 0.5, (h + dy * 0.5) / 2);
+    ctx.stroke();
+    return;
+  }
 
   // top face
   ctx.beginPath();
-  ctx.moveTo(x, y);
-  ctx.lineTo(x + d, y - d);
-  ctx.lineTo(x + d + w, y - d);
-  ctx.lineTo(x + w, y);
+  ctx.moveTo(x, y); ctx.lineTo(x + dx, y - dy); ctx.lineTo(x + dx + w, y - dy); ctx.lineTo(x + w, y);
   ctx.closePath();
   ctx.fillStyle = shade(a.rubber, 0.05);
   ctx.fill();
+  speckle(ctx, x + dx * 0.3, y - dy * 0.9, (s0 - x), dy * 0.8, 10, 3);
+  // sleeve over the top
+  ctx.beginPath();
+  ctx.moveTo(s0, y); ctx.lineTo(s0 + dx, y - dy); ctx.lineTo(x + dx + w, y - dy); ctx.lineTo(x + w, y);
+  ctx.closePath();
+  ctx.fillStyle = shade(a.base, 0.12);
+  ctx.fill();
+  if (a.sleeve === 'apsara') {
+    ctx.fillStyle = shade(a.accent, 0.08);
+    ctx.beginPath();
+    ctx.moveTo(s0 + (x + w - s0) * 0.78, y); ctx.lineTo(s0 + (x + w - s0) * 0.98, y);
+    ctx.lineTo(s0 + (x + w - s0) * 0.98 + dx * 0.6, y - dy); ctx.lineTo(s0 + (x + w - s0) * 0.78 + dx * 0.6, y - dy);
+    ctx.fill();
+  }
   // right face
   ctx.beginPath();
-  ctx.moveTo(x + w, y);
-  ctx.lineTo(x + w + d, y - d);
-  ctx.lineTo(x + w + d, y - d + h);
-  ctx.lineTo(x + w, y + h);
+  ctx.moveTo(x + w, y); ctx.lineTo(x + w + dx, y - dy); ctx.lineTo(x + w + dx, y - dy + h); ctx.lineTo(x + w, y + h);
   ctx.closePath();
-  ctx.fillStyle = shade(a.rubber, -0.14);
-  ctx.fill();
-  // front face
-  if (round) rr(ctx, x, y, w, h, h / 2); else rr(ctx, x, y, w, h, h * 0.12);
-  ctx.fillStyle = shade(a.rubber, -0.04);
+  ctx.fillStyle = a.sleeve === 'band' ? shade(a.rubber, -0.16) : shade(a.base, -0.18);
   ctx.fill();
 
-  // sleeve wraps top + front + side
-  if (a.sleeve !== 'fruit') {
-    const s0 = x + w * 0.38, s1 = x + w;
-    const sleeveCol = a.base;
-    ctx.fillStyle = shade(sleeveCol, 0.06);
-    ctx.beginPath();
-    ctx.moveTo(s0, y); ctx.lineTo(s0 + d, y - d); ctx.lineTo(s1 + d, y - d); ctx.lineTo(s1, y);
-    ctx.fill();
-    ctx.fillStyle = shade(sleeveCol, -0.1);
-    ctx.beginPath();
-    ctx.moveTo(s1, y); ctx.lineTo(s1 + d, y - d); ctx.lineTo(s1 + d, y - d + h); ctx.lineTo(s1, y + h);
-    ctx.fill();
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(s0, y, s1 - s0, h);
-    ctx.clip();
-    ctx.translate(s0 + (s1 - s0) / 2, y + h / 2);
-    // reuse the top-down sleeve art, stretched over the front face
-    sleeveTop(ctx, a, (s1 - s0) / 0.62, h);
-    ctx.restore();
-  } else {
-    ctx.fillStyle = a.accent;
-    for (let i = 0; i < 8; i++) {
-      ctx.beginPath();
-      ctx.ellipse(x + w * (0.12 + i * 0.11), y + h * (i % 2 ? 0.35 : 0.65), w * 0.012, w * 0.02, 0.4, 0, Math.PI * 2);
-      ctx.fill();
-    }
+  // front face: rubber, then the printed sleeve
+  rr(ctx, x, y, w, h, Math.min(h * 0.1, 4));
+  const fg = ctx.createLinearGradient(0, y, 0, y + h);
+  fg.addColorStop(0, shade(a.rubber, 0.02));
+  fg.addColorStop(1, shade(a.rubber, -0.1));
+  ctx.fillStyle = fg;
+  ctx.fill();
+  speckle(ctx, x + 2, y + 2, s0 - x - 4, h - 4, 18, 5);
+  // worn, rubbed corner with graphite smudge
+  const sm = ctx.createRadialGradient(x + w * 0.06, y + h * 0.65, 0, x + w * 0.06, y + h * 0.65, h * 0.45);
+  sm.addColorStop(0, 'rgba(70,70,80,0.13)');
+  sm.addColorStop(1, 'rgba(70,70,80,0)');
+  ctx.fillStyle = sm;
+  ctx.fillRect(x, y, w * 0.3, h);
+  if (a.sleeve === 'band') sleeveFront(ctx, id, a, x, y, w, h);
+  else sleeveFront(ctx, id, a, s0, y, x + w - s0, h);
+  // sleeve edge casts a hairline shadow on the rubber
+  if (a.sleeve !== 'band') {
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.fillRect(s0 - 1.2, y, 1.2, h);
   }
-  ctx.strokeStyle = 'rgba(30,30,40,0.4)';
-  ctx.lineWidth = Math.max(1, width * 0.012);
-  if (round) rr(ctx, x, y, w, h, h / 2); else rr(ctx, x, y, w, h, h * 0.12);
+  // edge highlights
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x + 2, y + 0.5); ctx.lineTo(x + w - 1, y + 0.5); ctx.stroke();
+  ctx.strokeStyle = 'rgba(30,30,40,0.35)';
+  rr(ctx, x, y, w, h, Math.min(h * 0.1, 4));
   ctx.stroke();
 }
 
 function neonHexSide(ctx, a, width) {
-  const R = width * 0.42, k = 0.45, th = width * 0.16; // squashed hexagon prism
+  const R = width * 0.4, k = 0.5, th = width * 0.15;
   ctx.save();
-  // sides
-  ctx.fillStyle = shade(a.base, -0.12);
+  // shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.beginPath();
+  ctx.ellipse(0, th + R * k * 0.6, R * 1.05, R * k * 0.55, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // clear plastic case base (orange band) + sides
+  ctx.fillStyle = shade(a.base, -0.1);
   ctx.beginPath();
   ctx.moveTo(-R, 0); ctx.lineTo(-R, th); ctx.lineTo(-R / 2, R * k + th); ctx.lineTo(R / 2, R * k + th); ctx.lineTo(R, th); ctx.lineTo(R, 0);
   ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = 'rgba(255,255,255,0.5)';
-  ctx.fillRect(-R, th * 0.45, R * 2, th * 0.15);
-  // top
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.fillRect(-R, th * 0.42, R * 2, th * 0.14);
+  // top face
+  ctx.save();
   ctx.scale(1, k);
   hexPath(ctx, R, 0);
   ctx.fillStyle = a.base;
   ctx.fill();
-  hexPath(ctx, R * 0.82, 0);
+  hexPath(ctx, R * 0.84, 0);
   ctx.fillStyle = '#ffffff';
   ctx.fill();
-  const cols = ['#00b3e6', '#ff2d87', '#ffb000', '#22c55e'];
+  ctx.restore();
+  // neon lettering as colour blocks
+  const cols = ['#00b3e6', '#ff2d87', '#ffb000', '#22c55e', '#7c3aed'];
   cols.forEach((c, i) => {
     ctx.fillStyle = c;
-    rr(ctx, -R * 0.45 + i * R * 0.24, -R * 0.15, R * 0.18, R * 0.3, R * 0.06);
+    rr(ctx, -R * 0.5 + i * R * 0.2, -R * k * 0.2, R * 0.15, R * k * 0.3, R * 0.04);
     ctx.fill();
   });
+  text(ctx, 'ERASER', -R * 0.42, R * k * 0.3, R * 0.13, '#ff6a1a', 900);
+  // the clear lid, tipped back like in the photo
+  ctx.globalAlpha = 0.5;
+  ctx.save();
+  ctx.translate(0, -R * k * 1.05);
+  ctx.scale(1, k * 0.9);
+  hexPath(ctx, R * 1.02, 0);
+  const lid = ctx.createLinearGradient(-R, -R, R, R);
+  lid.addColorStop(0, 'rgba(255,255,255,0.75)');
+  lid.addColorStop(1, 'rgba(200,220,235,0.35)');
+  ctx.fillStyle = lid;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(160,180,200,0.9)';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  ctx.restore();
+  ctx.globalAlpha = 1;
+  ctx.save();
+  ctx.scale(1, k);
   hexPath(ctx, R, 0);
   ctx.strokeStyle = 'rgba(120,40,0,0.5)';
-  ctx.lineWidth = Math.max(1, width * 0.02);
+  ctx.lineWidth = Math.max(1, width * 0.015);
   ctx.stroke();
+  ctx.restore();
   ctx.restore();
 }
 
@@ -417,29 +656,36 @@ export function drawTopSide(ctx, eraserId, leadId, width) {
   const L = LEAD_ART[leadId];
   const stubH = width * 0.5, stubW = width * 0.12;
   const baseY = width * 0.14;
-  // shadow on the desk
-  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
   ctx.beginPath();
   ctx.ellipse(0, baseY + stubH + 2, width * 0.3, width * 0.05, 0, 0, Math.PI * 2);
   ctx.fill();
   if (L) {
-    // barrel stub
-    ctx.fillStyle = L.barrel;
-    ctx.fillRect(-stubW / 2, baseY - 4, stubW, stubH * 0.45);
-    ctx.fillStyle = L.stripe;
-    ctx.fillRect(-stubW * 0.1, baseY - 4, Math.max(1, stubW * 0.18), stubH * 0.45);
+    const P = LEAD_PRINT[leadId] || { pattern: 'solid' };
+    const bh = stubH * 0.45;
+    // hex barrel stub: three facets
+    const fw = stubW / 3;
+    [[0, 0.2], [1, 0], [2, -0.2]].forEach(([k, amt]) => {
+      const col = P.pattern === 'facets' && k !== 1 ? L.stripe : L.barrel;
+      ctx.fillStyle = shade(col, amt);
+      ctx.fillRect(-stubW / 2 + k * fw, baseY - 4, fw + 0.5, bh);
+    });
+    if (P.pattern === 'lines') {
+      ctx.fillStyle = L.stripe;
+      ctx.fillRect(-stubW / 2 + fw - 1, baseY - 4, 2, bh);
+      ctx.fillRect(-stubW / 2 + fw * 2 - 1, baseY - 4, 2, bh);
+    }
     // wood cone
     ctx.beginPath();
-    ctx.moveTo(-stubW / 2, baseY + stubH * 0.45 - 4);
-    ctx.lineTo(stubW / 2, baseY + stubH * 0.45 - 4);
+    ctx.moveTo(-stubW / 2, baseY + bh - 4);
+    ctx.lineTo(stubW / 2, baseY + bh - 4);
     ctx.lineTo(stubW * 0.12, baseY + stubH * 0.88);
     ctx.lineTo(-stubW * 0.12, baseY + stubH * 0.88);
     ctx.closePath();
-    ctx.fillStyle = WOOD;
+    const wg = ctx.createLinearGradient(-stubW / 2, 0, stubW / 2, 0);
+    wg.addColorStop(0, '#f6dcb2'); wg.addColorStop(0.6, WOOD); wg.addColorStop(1, WOOD_DARK);
+    ctx.fillStyle = wg;
     ctx.fill();
-    ctx.fillStyle = WOOD_DARK;
-    ctx.fillRect(stubW * 0.05, baseY + stubH * 0.45 - 4, stubW * 0.2, stubH * 0.3);
-    // graphite point
     ctx.beginPath();
     ctx.moveTo(-stubW * 0.12, baseY + stubH * 0.88);
     ctx.lineTo(stubW * 0.12, baseY + stubH * 0.88);
