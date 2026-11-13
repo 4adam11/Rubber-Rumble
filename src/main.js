@@ -28,7 +28,11 @@ const unlockAudio = () => audio.unlock();
 addEventListener('pointerdown', unlockAudio);
 addEventListener('keydown', unlockAudio);
 
-const buzz = (pattern) => { if (coarse && !settings.muted) { try { navigator.vibrate?.(pattern); } catch { /* not supported */ } } };
+// Phone vibration: only after the player has really touched the page (browsers block it before that).
+const buzz = (pattern) => {
+  if (!coarse || settings.muted || !navigator.userActivation?.hasBeenActive) return;
+  try { navigator.vibrate?.(pattern); } catch { /* not supported */ }
+};
 
 let game = null;     // the match being played or demoed
 let session = null;  // menu choices: { mode, difficulty, parts, abilities, arena, changing }
