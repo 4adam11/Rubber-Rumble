@@ -72,7 +72,7 @@ function wantsSpecial(me, opp, world) {
 // Which comeback ability the computer brings.
 const SUITS = {
   attack: ['dash', 'crumbs'], defense: ['plant', 'shield'], stamina: ['secondWind', 'crumbs'],
-  balance: ['recentre', 'secondWind'], wildcard: ['dash', 'recentre'],
+  balance: ['recentre', 'secondWind'], wildcard: ['secondWind', 'shield'],
 };
 const COUNTER_ABILITY = { attack: 'shield', defense: 'secondWind', stamina: 'dash', balance: 'crumbs', wildcard: 'crumbs' };
 

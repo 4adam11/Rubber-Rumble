@@ -20,6 +20,7 @@ export const CONST = {
   HIT_LUCK: 0.25,
   MASS_K: 0.3, // damage × (2·m_hitter/(m_a+m_b))^MASS_K // each hit's damage varies ±25%
   HIT_WOBBLE: 0.03,
+  BRACE: 0.85, // defence-type erasers take this share of hit damage
   SNAP_BASE: 0.35,
   TIME_LIMIT: 60,
   MAX_ELAPSED: 0.25,
@@ -179,6 +180,7 @@ function hitDamage(victim, attacker, impact) {
   if (attacker.spec.eraserId === 'doms-cubo') d *= 1.15;
   if (attacker.dashArmed) d *= 1.5;
   if (victim.planted) d *= 0.5;
+  if (victim.spec.archetype === 'defense') d *= CONST.BRACE; // big erasers brace for hits
   return d;
 }
 

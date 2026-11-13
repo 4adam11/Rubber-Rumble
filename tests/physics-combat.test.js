@@ -192,3 +192,19 @@ test('wild resolves to a real special', () => {
   for (let s = 1; s < 40; s++) seen.add(world2({ a: ['fruit-scented', 'nataraj-hb'], rng: seeded(s) }).tops[0].specialKind);
   assert.ok(seen.size >= 3);
 });
+
+test('defence-type erasers brace: they take less damage from the same hit', () => {
+  const run = (archetype) => {
+    const w = world2({
+      a: ['apsara-jumbo', 'apsara-absolute'], b: ['nataraj-621', 'apsara-absolute'],
+      la: launch(0.25, 0, 800), lb: launch(-0.25, 0, 900), opts: { bowlK: 0 },
+    });
+    w.tops[0].spec = { ...w.tops[0].spec, archetype };
+    w.tops[1].vx = 1.5;
+    steps(w, 0.4);
+    return 800 - w.tops[0].rpm;
+  };
+  const braced = run('defense');
+  const plain = run('balance');
+  assert.ok(braced < plain * 0.9, `braced ${braced} plain ${plain}`);
+});

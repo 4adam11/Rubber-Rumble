@@ -1,12 +1,15 @@
 // Headless balance check: CPU(medium) vs CPU(medium) rounds.
-// Usage: node tools/balance.mjs [roundsPerMatchup] [seed]
+// Usage: node tools/balance.mjs [roundsPerMatchup] [seed] [arena|all]
 // Seeded, so the same arguments always print the same numbers.
 import { ERASERS, LEADS, buildTop } from '../src/parts.js';
 import { createWorld, step } from '../src/physics.js';
-import { cpuLaunch, createCpu } from '../src/ai.js';
+import { cpuLaunch, createCpu, pickAbility } from '../src/ai.js';
+import { ARENAS, ARENA_IDS } from '../src/arenas.js';
 
 const N = Number(process.argv[2]) || 200;
 const SEED = Number(process.argv[3]) || 1;
+const ARENA = process.argv[4] || 'all';
+let roundNo = 0;
 const DIFF = 'medium';
 
 function mulberry32(seed) {
@@ -23,7 +26,9 @@ const rng = mulberry32(SEED);
 
 function playRound(pa, pb) {
   const sa = buildTop(...pa), sb = buildTop(...pb);
-  const w = createWorld([sa, sb], [cpuLaunch(sa, DIFF, 0, rng), cpuLaunch(sb, DIFF, 1, rng)], rng);
+  const arena = ARENAS[ARENA === 'all' ? ARENA_IDS[roundNo++ % ARENA_IDS.length] : ARENA];
+  const abilities = [pickAbility(DIFF, sa, sb, rng), pickAbility(DIFF, sb, sa, rng)];
+  const w = createWorld([sa, sb], [cpuLaunch(sa, DIFF, 0, rng), cpuLaunch(sb, DIFF, 1, rng)], rng, { arena, abilities });
   const cpus = [createCpu(DIFF, 0, rng), createCpu(DIFF, 1, rng)];
   while (!w.over) step(w, cpus.map((c) => c.think(w, 1 / 120)));
   return { winner: w.result.winner, reason: w.result.reason, time: w.time };
