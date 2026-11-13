@@ -1,4 +1,5 @@
 // Top physics in arena units (thali radius R = 1). Pure: no DOM.
+import { UNLOCK_AT } from './abilities.js';
 
 export const CONST = {
   DT: 1 / 120,
@@ -25,6 +26,7 @@ export const CONST = {
 };
 
 const KINDS = ['dash', 'plant', 'secondWind', 'recentre'];
+const CRUMB = { every: 0.22, life: 6, r: 0.085, drag: 3.2, duration: 4 };
 
 // 1 at stat 5, smaller for higher stats; k sets how much stats matter.
 const statMul = (v, k) => 1 - k * (v - 5) / 10;
@@ -37,8 +39,12 @@ export function createWorld(specs, launches, rng = Math.random, opts = {}) {
       x: l.x, y: l.y, vx: 0, vy: 0,
       rpm: l.rpm, wobble: l.wobble, angle: 0,
       leadSnapped: false,
-      specialKind: spec.special === 'wild' ? KINDS[Math.min(3, Math.floor(rng() * 4))] : spec.special,
+      specialKind: opts.abilities?.[i] || (spec.special === 'wild' ? KINDS[Math.min(3, Math.floor(rng() * 4))] : spec.special),
       specialUsed: false,
+      unlocked: false,
+      shieldHits: 0,
+      crumbUntil: 0,
+      nextCrumb: 0,
       specialUntil: 0,
       dashUntil: 0,
       dashArmed: false,
@@ -48,7 +54,12 @@ export function createWorld(specs, launches, rng = Math.random, opts = {}) {
   });
   return {
     tops, time: 0, events: [], over: false, result: null, rng,
-    bowlK: opts.bowlK ?? CONST.BOWL_K,
+    bowlK: opts.bowlK ?? opts.arena?.bowlK ?? CONST.BOWL_K,
+    unlockAt: opts.unlockAt ?? UNLOCK_AT,
+    // slowing patches: { x, y, r, drag, owner (-1 = arena), until }
+    zones: (opts.arena?.zones || []).map((z) => ({ ...z, owner: -1, until: Infinity })),
+    bumpers: (opts.arena?.bumpers || []).map((b) => ({ ...b })),
+    arena: opts.arena || null,
   };
 }
 
@@ -85,6 +96,12 @@ function moveTop(w, t, intent, dt, opp) {
 
   t.vx += ax * dt;
   t.vy += ay * dt;
+  let drag = 0;
+  for (const z of w.zones) {
+    if (z.owner === t.index) continue;
+    if (Math.hypot(t.x - z.x, t.y - z.y) < z.r + s.radius * 0.5) drag = Math.max(drag, z.drag);
+  }
+  if (drag) { t.vx *= Math.exp(-drag * dt); t.vy *= Math.exp(-drag * dt); t.inZone = true; } else t.inZone = false;
   const damp = Math.exp(-CONST.DAMPING * dt);
   t.vx *= damp;
   t.vy *= damp;
@@ -115,11 +132,18 @@ function useSpecial(w, t, i) {
       break;
     case 'plant':
       t.planted = true;
-      t.specialUntil = w.time + 2;
+      t.specialUntil = w.time + 2.5;
       break;
     case 'secondWind':
-      t.rpm = Math.min(s.maxRPM, t.rpm + 0.15 * s.maxRPM);
-      t.wobble = Math.max(0, t.wobble - 0.2);
+      t.rpm = Math.min(s.maxRPM, t.rpm + 0.2 * s.maxRPM);
+      t.wobble = Math.max(0, t.wobble - 0.25);
+      break;
+    case 'shield':
+      t.shieldHits = 2;
+      break;
+    case 'crumbs':
+      t.crumbUntil = w.time + CRUMB.duration;
+      t.nextCrumb = w.time;
       break;
     case 'recentre':
       t.wobble = 0;
@@ -130,14 +154,26 @@ function useSpecial(w, t, i) {
 }
 
 function applySpecials(w, intents) {
+  w.zones = w.zones.filter((z) => z.until > w.time);
   w.tops.forEach((t, i) => {
+    t.index = i;
     if (t.planted && w.time >= t.specialUntil) t.planted = false;
     if (t.dashArmed && w.time >= t.dashArmedUntil) t.dashArmed = false;
-    if (intents?.[i]?.special && !t.specialUsed) useSpecial(w, t, i);
+    // abilities are a comeback tool: they unlock once health (spin) falls to the threshold
+    if (!t.unlocked && t.rpm <= w.unlockAt * t.spec.maxRPM) {
+      t.unlocked = true;
+      w.events.push({ type: 'unlock', i, kind: t.specialKind });
+    }
+    if (intents?.[i]?.special && t.unlocked && !t.specialUsed) useSpecial(w, t, i);
+    if (w.time < t.crumbUntil && w.time >= t.nextCrumb && w.zones.length < 40) {
+      w.zones.push({ x: t.x, y: t.y, r: CRUMB.r, drag: CRUMB.drag, owner: i, until: w.time + CRUMB.life, kind: 'crumbs' });
+      t.nextCrumb = w.time + CRUMB.every;
+    }
   });
 }
 
 function hitDamage(victim, attacker, impact) {
+  if (victim.shieldHits > 0) return 0;
   const spin = Math.min(1, attacker.rpm / attacker.spec.maxRPM);
   let d = impact * CONST.HIT_DAMAGE * (CONST.ATK_BASE + attacker.spec.attack) / (CONST.ATK_BASE + victim.spec.defense) * (0.5 + spin);
   if (attacker.spec.eraserId === 'doms-cubo') d *= 1.15;
@@ -183,10 +219,20 @@ function collide(w) {
   b.dashArmed = false;
   a.rpm = Math.max(0, a.rpm - dmgA);
   b.rpm = Math.max(0, b.rpm - dmgB);
+  const blocked = [a.shieldHits > 0, b.shieldHits > 0];
+  w.tops.forEach((t, i) => {
+    if (blocked[i]) {
+      t.shieldHits--;
+      w.events.push({ type: 'block', i, left: t.shieldHits });
+    }
+  });
+  if (dmgA > 0) w.events.push({ type: 'damage', i: 0, amount: dmgA });
+  if (dmgB > 0) w.events.push({ type: 'damage', i: 1, amount: dmgB });
   const rammed = [1.5 - shareA, 0.5 + shareA]; // the top being rammed shakes more
   w.tops.forEach((t, i) => {
     const other = w.tops[1 - i];
     const shove = (2 * other.spec.mass) / (t.spec.mass + other.spec.mass); // heavy tops shake less
+    if (blocked[i]) return; // the shield takes the whole hit
     t.wobble += impact * CONST.HIT_WOBBLE * rammed[i] * shove * statMul(t.spec.stability, CONST.STAB_K);
     if (!t.leadSnapped && impact * rammed[i] > CONST.SNAP_BASE * t.spec.durability) {
       t.leadSnapped = true;
@@ -196,6 +242,30 @@ function collide(w) {
     }
   });
   w.events.push({ type: 'hit', x: a.x + nx * a.spec.radius, y: a.y + ny * a.spec.radius, impact });
+}
+
+// Solid arena pieces (the sharpener): push out, bounce, and knock a little spin off.
+function bounceOffBumpers(w) {
+  w.tops.forEach((t, i) => {
+    for (const b of w.bumpers) {
+      const dx = t.x - b.x, dy = t.y - b.y;
+      const d = Math.hypot(dx, dy);
+      const minD = b.r + t.spec.radius;
+      if (d >= minD) continue;
+      const nx = d > 1e-9 ? dx / d : 1, ny = d > 1e-9 ? dy / d : 0;
+      t.x = b.x + nx * minD;
+      t.y = b.y + ny * minD;
+      const vn = t.vx * nx + t.vy * ny;
+      if (vn < 0) {
+        t.vx -= 1.9 * vn * nx;
+        t.vy -= 1.9 * vn * ny;
+        const impact = -vn;
+        t.rpm = Math.max(0, t.rpm - impact * CONST.HIT_DAMAGE * 0.35);
+        t.wobble += impact * CONST.HIT_WOBBLE * 0.6;
+        w.events.push({ type: 'bump', i, x: b.x + nx * b.r, y: b.y + ny * b.r, impact, kind: b.kind });
+      }
+    }
+  });
 }
 
 function lossReason(t) {
@@ -218,6 +288,7 @@ export function step(w, intents) {
   applySpecials(w, intents, dt);
   w.tops.forEach((t, i) => moveTop(w, t, intents?.[i], dt, w.tops[1 - i]));
   collide(w);
+  if (w.bumpers.length) bounceOffBumpers(w);
   w.time += dt;
 
   const reasons = w.tops.map(lossReason);

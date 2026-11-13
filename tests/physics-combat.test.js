@@ -115,8 +115,8 @@ test('second wind', () => {
   a.rpm = 0.2 * a.spec.maxRPM;
   a.wobble = 0.5;
   step(w, SPECIAL_A);
-  assert.ok(Math.abs(a.rpm - 0.35 * a.spec.maxRPM) < 2, `rpm ${a.rpm}`);
-  assert.ok(Math.abs(a.wobble - 0.3) < 0.01, `wobble ${a.wobble}`);
+  assert.ok(Math.abs(a.rpm - 0.4 * a.spec.maxRPM) < 2, `rpm ${a.rpm}`);
+  assert.ok(Math.abs(a.wobble - 0.25) < 0.01, `wobble ${a.wobble}`);
   const full = world2({ a: ['camlin-dustfree', 'nataraj-hb'], opts: { bowlK: 0 } });
   step(full, SPECIAL_A);
   assert.ok(full.tops[0].rpm <= full.tops[0].spec.maxRPM);
@@ -135,7 +135,7 @@ test('recentre', () => {
   assert.equal(w.tops[0].specialKind, 'recentre');
 });
 
-test('plant ignores steering and lasts 2 s', () => {
+test('plant ignores steering and lasts 2.5 s', () => {
   const steerUp = [{ steer: { x: 0, y: 1 }, special: false }, NO_INTENT[1]];
   const w = world2({ a: ['apsara-jumbo', 'apsara-absolute'], opts: { bowlK: 0 } });
   step(w, SPECIAL_A);
@@ -143,7 +143,7 @@ test('plant ignores steering and lasts 2 s', () => {
   const y0 = w.tops[0].y;
   steps(w, 1.5, steerUp);
   assert.ok(Math.abs(w.tops[0].y - y0) < 1e-9);
-  steps(w, 0.6, steerUp);
+  steps(w, 1.1, steerUp);
   assert.equal(w.tops[0].planted, false);
   steps(w, 0.3, steerUp);
   assert.ok(w.tops[0].y > y0 + 0.001);

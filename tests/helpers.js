@@ -31,7 +31,7 @@ export function world2({
     [sa, sb],
     [la || launch(0.6, 0, sa.maxRPM), lb || launch(-0.6, 0, sb.maxRPM)],
     rng,
-    opts,
+    { unlockAt: 1, ...opts }, // effect tests: abilities usable from the start
   );
 }
 

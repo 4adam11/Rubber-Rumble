@@ -1,6 +1,7 @@
 // Computer opponent. Pure: no DOM.
 import { ERASERS, LEADS, buildTop } from './parts.js';
 import { LAUNCH } from './launch.js';
+import { ABILITY_IDS } from './abilities.js';
 
 export const DIFFICULTY = {
   easy: { rpm: 0.60, spread: 0.10, perfect: 0.10, reaction: 0.5 },
@@ -51,20 +52,34 @@ function norm(x, y, scale = 1) {
   return m < 1e-9 ? { x: 0, y: 0 } : { x: (x / m) * scale, y: (y / m) * scale };
 }
 
-function wantsSpecial(me, opp) {
-  if (me.specialUsed) return false;
+function wantsSpecial(me, opp, world) {
+  const open = me.unlocked || me.rpm <= (world.unlockAt ?? 0.3) * me.spec.maxRPM;
+  if (me.specialUsed || !open) return false;
   const dist = Math.hypot(opp.x - me.x, opp.y - me.y);
+  const nx = (me.x - opp.x) / (dist || 1), ny = (me.y - opp.y) / (dist || 1);
+  const closing = (opp.vx - me.vx) * nx + (opp.vy - me.vy) * ny;
   switch (me.specialKind) {
-    case 'dash': return dist < 0.4;
-    case 'plant': {
-      const nx = (me.x - opp.x) / (dist || 1), ny = (me.y - opp.y) / (dist || 1);
-      const closing = (opp.vx - me.vx) * nx + (opp.vy - me.vy) * ny;
-      return dist < 0.5 && closing > 0.8;
-    }
-    case 'secondWind': return me.rpm < 0.3 * me.spec.maxRPM;
-    case 'recentre': return me.wobble > 0.6;
+    case 'dash': return dist < 0.5;
+    case 'plant': return dist < 0.5 && closing > 0.5;
+    case 'shield': return dist < 0.6 && closing > 0.3;
+    case 'crumbs': return dist < 0.7;
+    case 'secondWind': return true; // unlocked means health is already low
+    case 'recentre': return me.wobble > 0.4 || Math.hypot(me.x, me.y) > 0.7;
     default: return false;
   }
+}
+
+// Which comeback ability the computer brings.
+const SUITS = {
+  attack: ['dash', 'crumbs'], defense: ['plant', 'shield'], stamina: ['secondWind', 'crumbs'],
+  balance: ['recentre', 'secondWind'], wildcard: ['dash', 'recentre'],
+};
+const COUNTER_ABILITY = { attack: 'shield', defense: 'secondWind', stamina: 'dash', balance: 'crumbs', wildcard: 'crumbs' };
+
+export function pickAbility(difficulty, mySpec, oppSpec, rng = Math.random) {
+  if (difficulty === 'hard' && oppSpec) return COUNTER_ABILITY[oppSpec.archetype];
+  if (difficulty === 'medium' && mySpec) return pick(SUITS[mySpec.archetype], rng);
+  return pick(ABILITY_IDS, rng);
 }
 
 function decide(world, index) {
@@ -88,7 +103,7 @@ function decide(world, index) {
     const corr = (0.35 - d) * 2;
     steer = norm(tx + rx * corr, ty + ry * corr, 0.35);
   }
-  return { steer, special: wantsSpecial(me, opp) };
+  return { steer, special: wantsSpecial(me, opp, world) };
 }
 
 export function createCpu(difficulty, index, rng = Math.random) {
