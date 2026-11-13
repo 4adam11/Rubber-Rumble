@@ -1,15 +1,11 @@
 // DOM menus on notebook paper. Talks to main.js only through handlers.action().
 import { ERASERS, LEADS, buildTop } from './parts.js';
 import { drawEraserSide, drawPencil, drawTopSide } from './art.js';
+import { ABILITIES, ABILITY_IDS } from './abilities.js';
+import { ARENAS, ARENA_IDS } from './arenas.js';
+import { paintArenaThumb } from './arena-art.js';
 
 const ARCH = { attack: 'Attack', defense: 'Defense', stamina: 'Stamina', balance: 'Balance', wildcard: 'Wildcard' };
-const SPECIAL_DESC = {
-  dash: 'Charge at your rival. Your next hit does 1.5× damage.',
-  plant: 'Dig in for 2 s: 3× heavier and takes half damage.',
-  secondWind: 'Win back 15% spin and steady the wobble.',
-  recentre: 'Kill the wobble and slide back toward the middle.',
-  wild: 'A random special, rolled fresh every round.',
-};
 const STATS = [['attack', 'Attack'], ['defense', 'Defense'], ['stamina', 'Stamina'], ['balance', 'Balance'], ['speed', 'Speed']];
 const DIFF = [
   ['easy', 'Easy', 'Weak launches, slow to react. Good for learning the twist.'],
@@ -44,6 +40,7 @@ function thumb(key, w, h, draw) {
 }
 const eraserThumb = (id) => thumb(`e:${id}`, 64, 40, (g) => { g.translate(32, 22); drawEraserSide(g, id, 46); });
 const pencilThumb = (id) => thumb(`p:${id}`, 72, 20, (g) => drawPencil(g, id, 2, 10, 68, 10));
+const arenaThumb = (id) => thumb(`a:${id}`, 120, 120, (g) => paintArenaThumb(g, 120, id));
 
 
 export const RESULT_GUARD_MS = 400;
@@ -55,6 +52,7 @@ export function createUI(root, handlers, opts = {}) {
   let current = null;
   let mountedAt = 0;
   let picker = null; // { player, eraserId, leadId }
+  let choice = null; // ability / arena screen: { selected }
 
   root.addEventListener('click', (e) => {
     const el = e.target.closest('[data-action]');
@@ -68,6 +66,8 @@ export function createUI(root, handlers, opts = {}) {
       return;
     }
     if (action === 'ready') { handlers.action('ready', { eraserId: picker.eraserId, leadId: picker.leadId }); return; }
+    if (action === 'pick-ability' || action === 'pick-arena') { select(value); return; }
+    if (action === 'ability-ready' || action === 'arena-ready') { handlers.action(action, choice.selected); return; }
     handlers.action(action, value);
   });
 
@@ -229,6 +229,64 @@ export function createUI(root, handlers, opts = {}) {
     el.classList.add(cls);
   }
 
+  // highlight a card in place (ability / arena screens)
+  function select(value) {
+    choice.selected = value;
+    root.querySelectorAll('[data-action="pick-ability"], [data-action="pick-arena"]').forEach((el) => {
+      const on = el.dataset.value === value;
+      el.classList.toggle('is-on', on);
+      el.setAttribute('aria-pressed', String(on));
+      if (on) restartAnim(el, 'pop');
+    });
+  }
+
+  function abilityScreen(d) {
+    choice = { selected: d.selected };
+    mount('ability', `
+      <div class="sheet sheet-wide" style="--pc:${d.color}">
+        <h2><span style="color:${d.color}">${esc(d.who)}</span> pick your comeback</h2>
+        <p class="note">It unlocks when your health drops to 30%. Use it once to turn the fight around.</p>
+        <div class="ability-grid">
+          ${ABILITY_IDS.map((id) => {
+            const a = ABILITIES[id];
+            return `<button class="ability-card ${id === d.selected ? 'is-on' : ''}" data-action="pick-ability" data-value="${id}" aria-pressed="${id === d.selected}" style="--ac:${a.color}">
+              <span class="ability-icon">${a.icon}</span><b>${esc(a.name)}</b><small>${esc(a.desc)}</small>
+            </button>`;
+          }).join('')}
+        </div>
+        <div class="row sticky-row">
+          <button class="btn btn-ghost" data-action="back">← Back</button>
+          <button class="btn btn-primary" data-action="ability-ready">Lock it in!</button>
+        </div>
+      </div>`, 'with-backdrop');
+  }
+
+  function arenaScreen(d) {
+    choice = { selected: d.selected };
+    mount('arena', `
+      <div class="sheet sheet-wide">
+        <h2>Choose the arena</h2>
+        <div class="arena-grid">
+          ${ARENA_IDS.map((id) => {
+            const a = ARENAS[id];
+            return `<button class="arena-card ${id === d.selected ? 'is-on' : ''}" data-action="pick-arena" data-value="${id}" aria-pressed="${id === d.selected}">
+              <img src="${arenaThumb(id)}" alt="" width="120" height="120">
+              <span class="level level-${a.level.toLowerCase()}">${a.level}</span>
+              <b>${esc(a.name)}</b><small>${esc(a.desc)}</small>
+            </button>`;
+          }).join('')}
+        </div>
+        <div class="row sticky-row">
+          <button class="btn btn-ghost" data-action="back">← Back</button>
+          <button class="btn btn-primary" data-action="arena-ready">Fight!</button>
+        </div>
+      </div>`, 'with-backdrop');
+  }
+
+  function introScreen() {
+    mount('intro', `<button class="skip-area" data-action="skip-intro" aria-label="Skip intro"></button><span class="skip-intro">Tap to skip ›</span>`, 'intro');
+  }
+
   function roundResult(d) {
     mount('round', `
       <div class="sheet sheet-small">
@@ -302,7 +360,7 @@ export function createUI(root, handlers, opts = {}) {
   return {
     show(name, data = {}) {
       if (name === 'picker') { picker = { ...data }; renderPicker(); return; }
-      ({ title, difficulty, round: roundResult, match: matchResult, pause, howto, hud })[name](data);
+      ({ title, difficulty, round: roundResult, match: matchResult, pause, howto, hud, ability: abilityScreen, arena: arenaScreen, intro: introScreen })[name](data);
     },
     hide() { current = null; root.innerHTML = ''; },
     get current() { return current; },

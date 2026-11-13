@@ -1,16 +1,19 @@
-// Game flow: title -> (difficulty) -> picker(s) -> launch -> battle -> results.
-import { buildTop, SPECIAL_NAMES } from './parts.js';
-import { createWorld, simulate } from './physics.js';
+// Game flow: title -> (difficulty) -> parts -> ability -> arena -> VS intro -> launch -> battle -> results.
+import { buildTop } from './parts.js';
+import { createWorld, simulate, CONST } from './physics.js';
 import {
   LAUNCH, createLaunch, slide, setPlace, keyStroke, addStroke, release, updateLaunch,
 } from './launch.js';
-import { cpuLaunch, createCpu, pickCombo } from './ai.js';
+import { cpuLaunch, createCpu, pickCombo, pickAbility } from './ai.js';
 import { createRenderer, PLAYER_COLORS, arenaToScreen } from './render.js';
 import { createInput, specialButton } from './input.js';
 import { createMatch, roundLabel } from './match.js';
 import { createUI } from './ui.js';
 import { createAudio } from './audio.js';
 import { loadSettings, saveSettings } from './settings.js';
+import { ABILITIES, ABILITY_IDS, UNLOCK_AT } from './abilities.js';
+import { ARENAS, ARENA_IDS } from './arenas.js';
+import { INTRO_SECONDS } from './intro.js';
 
 const canvas = document.getElementById('game');
 const renderer = createRenderer(canvas);
@@ -25,8 +28,10 @@ const unlockAudio = () => audio.unlock();
 addEventListener('pointerdown', unlockAudio);
 addEventListener('keydown', unlockAudio);
 
+const buzz = (pattern) => { if (coarse && !settings.muted) { try { navigator.vibrate?.(pattern); } catch { /* not supported */ } } };
+
 let game = null;     // the match being played or demoed
-let session = null;  // menu choices: { mode, difficulty, parts, changing }
+let session = null;  // menu choices: { mode, difficulty, parts, abilities, arena, changing }
 let paused = false;
 
 const input = createInput(canvas, () => renderer.layout, {
@@ -36,7 +41,10 @@ const input = createInput(canvas, () => renderer.layout, {
     if (!s) return null;
     return arenaToScreen(renderer.layout, LAUNCH.START_RADIUS * Math.cos(s.rimAngle), LAUNCH.START_RADIUS * Math.sin(s.rimAngle));
   },
-  onPause: () => (paused ? resume() : pause()),
+  onPause: () => {
+    if (game?.phase === 'intro' && !isDemo()) { skipIntro(); return; }
+    paused ? resume() : pause();
+  },
 });
 
 const ui = createUI(document.getElementById('screens'), { action: onAction, click: () => audio.click() });
@@ -48,6 +56,8 @@ const inPlay = () => game && !isDemo() && (game.phase === 'launch' || game.phase
 
 function startMatch(config) {
   input.setPlayers(config.mode === '2p' ? 2 : 1);
+  renderer.setArena(config.arena || 'thali');
+  renderer.hud.reset();
   game = {
     config,
     specs: config.parts.map((p) => buildTop(p.eraserId, p.leadId)),
@@ -57,7 +67,37 @@ function startMatch(config) {
     world: null, launches: null, cpuPlans: [null, null], cpus: [null, null],
     timer: 0, acc: 0, resultShown: false,
   };
+  if (config.mode === 'demo') { startRound(); return; }
+  game.phase = 'intro';
+  input.setPhase('menu');
+  ui.show('intro');
+  audio.go();
+}
+
+function skipIntro() {
+  if (game?.phase !== 'intro') return;
   startRound();
+}
+
+addEventListener('keydown', (e) => {
+  if (game?.phase === 'intro' && !isDemo() && ['Space', 'Enter', 'NumpadEnter'].includes(e.code)) { e.preventDefault(); skipIntro(); }
+});
+
+function introData() {
+  const g = game;
+  return {
+    players: [0, 1].map((i) => ({
+      name: playerName(i),
+      color: PLAYER_COLORS[i],
+      eraserId: g.specs[i].eraserId,
+      leadId: g.specs[i].leadId,
+      subtitle: g.specs[i].combo ? `★ ${g.specs[i].combo.name}` : `${g.specs[i].eraserName} + ${g.specs[i].leadName}`,
+      ability: g.config.abilities[i],
+    })),
+    round: 'Round 1',
+    arenaName: ARENAS[g.config.arena].name,
+    arenaLevel: ARENAS[g.config.arena].level,
+  };
 }
 
 function startRound() {
@@ -67,10 +107,12 @@ function startRound() {
   g.timer = 0;
   g.world = null;
   g.resultShown = false;
+  renderer.hud.reset();
   if (g.config.mode === 'cpu' && g.config.difficulty === 'hard' && g.round > 1) {
     const p = pickCombo('hard', g.specs[0]);
     g.config.parts[1] = p;
     g.specs[1] = buildTop(p.eraserId, p.leadId);
+    g.config.abilities[1] = pickAbility('hard', g.specs[1], g.specs[0]);
   }
   g.launches = g.specs.map((spec, i) => createLaunch(spec, i));
   const diff = g.config.difficulty || 'medium';
@@ -80,7 +122,7 @@ function startRound() {
   input.setPhase('launch');
   ui.show('hud');
   const done = g.match.state().rounds;
-  renderer.banner(roundLabel(done, done.length), { sub: 'Place your top on the rim', size: 54, life: 1.3 });
+  renderer.banner(roundLabel(done, done.length), { sub: coarse ? 'Drag your top to a spot on the rim' : 'Place your top on the rim', size: 54, life: 1.3 });
 }
 
 function stepLaunch(dt) {
@@ -107,7 +149,7 @@ function stepLaunch(dt) {
     const before = s.rpm;
     for (const k of inp.keyStrokes) keyStroke(s, k);
     for (const v of inp.strokes) addStroke(s, v);
-    if (s.rpm > before) audio.stroke();
+    if (s.rpm > before) { audio.stroke(); buzz(8); }
     if (inp.release) release(s);
     const was = s.phase;
     updateLaunch(s, dt);
@@ -115,6 +157,7 @@ function stepLaunch(dt) {
       const p = arenaToScreen(renderer.layout, s.result.x, s.result.y);
       renderer.banner('PERFECT!', { x: p.x, y: p.y - 50, color: '#22a34a', size: 30, life: 1.2 });
       audio.perfect();
+      buzz([20, 30, 20]);
     }
   });
   if (g.launches.every((s) => s.phase === 'done')) {
@@ -128,11 +171,14 @@ function startBattle() {
   g.phase = 'battle';
   g.timer = 0;
   g.acc = 0;
-  g.world = createWorld(g.specs, g.launches.map((s) => s.result));
+  g.world = createWorld(g.specs, g.launches.map((s) => s.result), Math.random, {
+    abilities: g.config.abilities, arena: ARENAS[g.config.arena],
+  });
   if (isDemo()) return;
   input.setPhase('battle');
   renderer.banner('GHUMAO!', { sub: 'Spin it!', size: 70, life: 1.1 });
   audio.go();
+  buzz(30);
 }
 
 function stepBattle(dt) {
@@ -149,21 +195,23 @@ function stepBattle(dt) {
   if (!isDemo()) {
     renderer.spawnFromEvents(w.events, w);
     for (const e of w.events) {
-      if (e.type === 'hit') audio.clack(e.impact);
-      else if (e.type === 'snap') audio.snap();
-      else if (e.type === 'special') audio.special();
+      if (e.type === 'hit') { audio.clack(e.impact); if (e.impact > 0.8) buzz(15); }
+      else if (e.type === 'snap') { audio.snap(); buzz([60, 40, 90]); }
+      else if (e.type === 'special') { audio.special(); buzz(25); }
+      else if (e.type === 'unlock') { audio.perfect(); if (!isCpu(e.i)) buzz([30, 40, 30]); }
+      else if (e.type === 'block' || e.type === 'bump') audio.clack(1);
     }
     w.tops.forEach((t, i) => audio.hum(i, w.over ? 0 : t.rpm / t.spec.maxRPM));
-  } else if (w.events.some((e) => e.type === 'hit')) {
-    renderer.spawnFromEvents(w.events.filter((e) => e.type === 'hit'), w);
+  } else {
+    renderer.spawnFromEvents(w.events.filter((e) => e.type === 'hit'), w, true);
   }
   for (const e of w.events) if (e.type === 'end') endRound(e.result);
   w.events.length = 0;
 
   if (g.phase === 'over') {
     g.timer += dt;
-    if (isDemo()) { if (g.timer > 1.5) startRound(); return; }
-    if (g.timer > 1.7 && !g.resultShown) {
+    if (isDemo()) { if (g.timer > 1.5) { startRound(); } return; }
+    if (g.timer > 1.9 && !g.resultShown) {
       g.resultShown = true;
       showResult();
     }
@@ -171,8 +219,8 @@ function stepBattle(dt) {
 }
 
 const REASON = {
-  stopped: 'stopped spinning', tipped: 'tipped over', ringout: 'got knocked out of the thali',
-  time: 'had more spin at the bell', draw: 'Both tops gave up together. Replay!',
+  stopped: 'ran out of health', tipped: 'tipped over', ringout: 'got knocked out of the arena',
+  time: 'had more health at the bell', draw: 'Both tops gave up together. Replay!',
 };
 
 const SHORT = { stopped: 'outspun', tipped: 'rival tipped over', ringout: 'knock-out', time: 'on time' };
@@ -199,12 +247,14 @@ function endRound(result) {
   input.setPhase('menu');
   audio.silence();
   g.match.record(result);
+  const big = result.reason === 'ringout' ? 'KNOCK-OUT!' : null;
   if (result.winner === null) {
-    renderer.banner('Draw!', { sub: describe(result), size: 64, life: 1.8 });
+    renderer.banner('Draw!', { sub: describe(result), size: 64, life: 2 });
   } else {
-    renderer.banner(`${playerName(result.winner)} ${winsWord(result.winner)}!`,
-      { sub: describe(result), color: PLAYER_COLORS[result.winner], size: 60, life: 1.8 });
+    renderer.banner(big || `${playerName(result.winner)} ${winsWord(result.winner)}!`,
+      { sub: describe(result), color: PLAYER_COLORS[result.winner], size: 64, life: 2 });
   }
+  buzz(result.winner === 0 || game.config.mode === '2p' ? [40, 60, 40] : 120);
 }
 
 function showResult() {
@@ -233,10 +283,15 @@ function showResult() {
 }
 
 // ---------- menus ----------
+const pickOne = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
 function startDemo() {
   const a = pickCombo('medium', null), b = pickCombo('medium', null);
   input.setPhase('menu');
-  startMatch({ mode: 'demo', difficulty: 'medium', parts: [a, b] });
+  startMatch({
+    mode: 'demo', difficulty: 'medium', parts: [a, b],
+    abilities: [pickOne(ABILITY_IDS), pickOne(ABILITY_IDS)], arena: pickOne(ARENA_IDS),
+  });
 }
 
 function showTitle() {
@@ -247,9 +302,10 @@ function showTitle() {
   ui.show('title', { muted: settings.muted });
 }
 
+function who(player) { return session.mode === '2p' ? `Player ${player + 1},` : 'You,'; }
+
 function openPicker(player) {
   session.picking = player;
-  const twoP = session.mode === '2p';
   const parts = session.parts?.[player] || settings.lastParts[player];
   let note = '';
   if (session.mode === 'cpu') {
@@ -258,9 +314,16 @@ function openPicker(player) {
   } else if (player === 1) note = 'Player 1 is ready. Player 2, your turn!';
   else note = 'Pass the device after you pick.';
   ui.show('picker', {
-    player, who: twoP ? `Player ${player + 1},` : 'You,',
-    color: PLAYER_COLORS[player], note,
+    player, who: who(player), color: PLAYER_COLORS[player], note,
     eraserId: parts.eraserId, leadId: parts.leadId,
+  });
+}
+
+function openAbility(player) {
+  session.picking = player;
+  ui.show('ability', {
+    who: who(player), color: PLAYER_COLORS[player],
+    selected: session.abilities?.[player] || settings.lastAbility[player],
   });
 }
 
@@ -269,21 +332,36 @@ function partsReady(player, parts) {
   session.parts[player] = parts;
   settings.lastParts[player] = parts;
   saveSettings(settings);
-  if (session.mode === '2p' && player === 0) { openPicker(1); return; }
+  openAbility(player);
+}
 
-  if (session.changing && game && !isDemo()) {
-    // keep the score, swap the parts, play on
-    game.config.parts[0] = session.parts[0];
-    game.specs[0] = buildTop(session.parts[0].eraserId, session.parts[0].leadId);
-    if (session.mode === '2p') {
-      game.config.parts[1] = session.parts[1];
-      game.specs[1] = buildTop(session.parts[1].eraserId, session.parts[1].leadId);
-    }
-    const restart = session.changing === 'match';
-    session.changing = null;
-    if (restart) beginMatch(); else startRound();
-    return;
+function abilityReady(player, ability) {
+  session.abilities = session.abilities || [];
+  session.abilities[player] = ability;
+  settings.lastAbility[player] = ability;
+  saveSettings(settings);
+  if (session.mode === '2p' && player === 0) { openPicker(1); return; }
+  if (session.changing && game && !isDemo()) { applyChanges(); return; }
+  ui.show('arena', { selected: session.arena || settings.lastArena });
+}
+
+function applyChanges() {
+  // keep the score, swap the parts and abilities, play on
+  const humans = session.mode === '2p' ? [0, 1] : [0];
+  for (const i of humans) {
+    game.config.parts[i] = session.parts[i];
+    game.specs[i] = buildTop(session.parts[i].eraserId, session.parts[i].leadId);
+    game.config.abilities[i] = session.abilities[i];
   }
+  const restart = session.changing === 'match';
+  session.changing = null;
+  if (restart) beginMatch(); else startRound();
+}
+
+function arenaReady(id) {
+  session.arena = id;
+  settings.lastArena = id;
+  saveSettings(settings);
   beginMatch();
 }
 
@@ -291,12 +369,16 @@ function beginMatch() {
   paused = false;
   const p0 = session.parts[0];
   let p1 = session.parts[1];
+  const abilities = [session.abilities[0], session.abilities[1]];
   if (session.mode === 'cpu') {
-    p1 = session.difficulty === 'hard'
-      ? pickCombo('hard', buildTop(p0.eraserId, p0.leadId))
-      : pickCombo(session.difficulty, null);
+    const mine = buildTop(p0.eraserId, p0.leadId);
+    p1 = session.difficulty === 'hard' ? pickCombo('hard', mine) : pickCombo(session.difficulty, null);
+    abilities[1] = pickAbility(session.difficulty, buildTop(p1.eraserId, p1.leadId), mine);
   }
-  startMatch({ mode: session.mode, difficulty: session.difficulty, parts: [{ ...p0 }, { ...p1 }] });
+  startMatch({
+    mode: session.mode, difficulty: session.difficulty, parts: [{ ...p0 }, { ...p1 }],
+    abilities, arena: session.arena || 'thali',
+  });
 }
 
 function pause() {
@@ -329,6 +411,9 @@ function onAction(action, value) {
       ui.show('title', { muted: settings.muted });
       break;
     case 'ready': partsReady(session.picking, value); break;
+    case 'ability-ready': abilityReady(session.picking, value); break;
+    case 'arena-ready': arenaReady(value); break;
+    case 'skip-intro': skipIntro(); break;
     case 'back': back(); break;
     case 'next-round': startRound(); break;
     case 'change-parts':
@@ -345,8 +430,10 @@ function onAction(action, value) {
 function back() {
   const screen = ui.current;
   if (screen === 'howto' || screen === 'difficulty') { showTitle(); return; }
+  if (screen === 'ability') { openPicker(session.picking); return; }
+  if (screen === 'arena') { openAbility(session.mode === '2p' ? 1 : 0); return; }
   if (screen === 'picker') {
-    if (session.picking === 1) { openPicker(0); return; }
+    if (session.picking === 1) { openAbility(0); return; }
     if (session.changing) { session.changing = null; game.resultShown = false; showResult(); return; }
     if (session.mode === 'cpu') { ui.show('difficulty'); return; }
     showTitle();
@@ -363,23 +450,40 @@ function hints(i) {
     return coarse ? `Drag to place · ${left}s` : `${keys[0]}/${keys[1]} to place · ${left}s`;
   }
   if (s.phase === 'twist') {
-    if (coarse) return 'Flick 2 thumbs! Lift to let go';
+    if (coarse) return 'Flick 2 thumbs up & down!';
     if (game.config.mode === 'cpu') return `Mash ${keys[0]}↔${keys[1]} (or circle the mouse) · ${keys[2]} to let go`;
     return `Mash ${keys[0]}↔${keys[1]}! ${keys[2]} to let go`;
   }
   return s.result?.perfect ? 'PERFECT!' : 'Released';
 }
 
-function hud() {
+function hudData() {
   if (isDemo()) return null;
-  const tops = game.world?.tops;
+  const w = game.world;
+  const keys = coarse ? ['', ''] : game.config.mode === '2p' ? ['Space', 'Enter'] : ['Space', ''];
   return {
-    names: [0, 1].map(playerName),
-    roundWins: game.match.state().wins,
-    specialsReady: tops ? tops.map((t) => !t.specialUsed) : [true, true],
-    specialNames: tops ? tops.map((t) => SPECIAL_NAMES[t.specialKind]) : game.specs.map((s) => SPECIAL_NAMES[s.special]),
-    specialKeys: coarse ? ['', ''] : game.config.mode === '2p' ? ['Space', 'Enter'] : ['Space', ''],
+    players: [0, 1].map((i) => {
+      const t = w?.tops[i];
+      return {
+        name: playerName(i),
+        color: PLAYER_COLORS[i],
+        eraserId: game.specs[i].eraserId,
+        health: t ? t.rpm / t.spec.maxRPM : null,
+        wins: game.match.state().wins[i],
+        ability: { kind: game.config.abilities[i], unlocked: !!t?.unlocked, used: !!t?.specialUsed, key: keys[i] },
+      };
+    }),
+    time: w ? CONST.TIME_LIMIT - w.time : CONST.TIME_LIMIT,
+  };
+}
+
+function frameData() {
+  if (isDemo()) return null;
+  const humans = game.config.mode === '2p' ? [true, true] : [true, false];
+  return {
+    hudData: hudData(),
     launchLabels: game.phase === 'launch' ? [0, 1].map(hints) : null,
+    touchGuide: coarse && game.phase === 'launch' ? humans : null,
     overlay: drawTouchControls,
   };
 }
@@ -389,31 +493,56 @@ function drawTouchControls(ctx, L) {
   const humans = game.config.mode === '2p' ? [0, 1] : [0];
   for (const i of humans) {
     const b = specialButton(i, L.width, L.height, input.players);
-    const ready = !game.world.tops[i].specialUsed;
+    const t = game.world.tops[i];
+    const a = ABILITIES[t.specialKind];
+    const ready = t.unlocked && !t.specialUsed;
+    const clock = renderer.clock;
+    ctx.save();
+    if (ready) {
+      const pulse = 0.5 + 0.5 * Math.sin(clock * 9);
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r + 6 + pulse * 6, 0, Math.PI * 2);
+      ctx.fillStyle = `${a.color}55`;
+      ctx.fill();
+    }
     ctx.beginPath();
     ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-    ctx.fillStyle = ready ? 'rgba(255,253,246,0.92)' : 'rgba(255,253,246,0.45)';
+    ctx.fillStyle = ready ? a.color : t.specialUsed ? 'rgba(40,40,50,0.35)' : 'rgba(255,253,246,0.85)';
     ctx.fill();
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 4;
     ctx.strokeStyle = PLAYER_COLORS[i];
     ctx.stroke();
-    ctx.fillStyle = ready ? PLAYER_COLORS[i] : 'rgba(60,60,70,0.4)';
-    ctx.font = '700 26px "Kalam", cursive';
+    if (!t.unlocked) {
+      // progress toward unlocking: fills as health falls to 30%
+      const health = Math.max(0, t.rpm / t.spec.maxRPM);
+      const prog = Math.max(0, Math.min(1, (1 - health) / (1 - UNLOCK_AT)));
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r - 6, -Math.PI / 2, -Math.PI / 2 + prog * Math.PI * 2);
+      ctx.strokeStyle = a.color;
+      ctx.lineWidth = 5;
+      ctx.stroke();
+    }
+    ctx.font = `700 ${b.r * 0.8}px system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('★', b.x, b.y + 1);
+    ctx.globalAlpha = ready ? 1 : 0.55;
+    ctx.fillStyle = ready ? '#fff' : '#1f2a44';
+    ctx.fillText(t.unlocked ? a.icon : '🔒', b.x, b.y + 2);
+    ctx.restore();
     const j = input.joystick(i);
     if (j) {
       ctx.beginPath();
       ctx.arc(j.x, j.y, 60, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
       ctx.lineWidth = 2;
       ctx.stroke();
       const m = Math.hypot(j.dx, j.dy), k = m > 60 ? 60 / m : 1;
       ctx.beginPath();
-      ctx.arc(j.x + j.dx * k, j.y + j.dy * k, 18, 0, Math.PI * 2);
+      ctx.arc(j.x + j.dx * k, j.y + j.dy * k, 22, 0, Math.PI * 2);
       ctx.fillStyle = PLAYER_COLORS[i];
-      ctx.globalAlpha = 0.6;
+      ctx.globalAlpha = 0.7;
       ctx.fill();
       ctx.globalAlpha = 1;
     }
@@ -421,14 +550,21 @@ function drawTouchControls(ctx, L) {
 }
 
 function tick(dt) {
+  const sdt = dt * renderer.timeScale;
   if (game && !paused) {
-    if (game.phase === 'launch') stepLaunch(dt);
-    else if (game.phase === 'battle' || game.phase === 'over') stepBattle(dt);
+    if (game.phase === 'intro') {
+      game.timer += dt;
+      if (game.timer >= INTRO_SECONDS) startRound();
+    } else if (game.phase === 'launch') stepLaunch(sdt);
+    else if (game.phase === 'battle' || game.phase === 'over') stepBattle(sdt);
   }
   renderer.update(paused ? 0 : dt);
+  const w = game?.world;
+  renderer.hud.update(paused ? 0 : dt, w ? w.tops.map((t) => t.rpm / t.spec.maxRPM) : null);
   if (!game) renderer.drawIdle();
-  else if (game.phase === 'launch') renderer.drawLaunch(game.launches, hud());
-  else renderer.drawBattle(game.world, hud());
+  else if (game.phase === 'intro') renderer.drawIntro(Math.min(1, game.timer / INTRO_SECONDS), introData());
+  else if (game.phase === 'launch') renderer.drawLaunch(game.launches, frameData());
+  else renderer.drawBattle(game.world, frameData());
 }
 
 // Debug handle for the console: inspect state, or step frames by hand

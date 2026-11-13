@@ -1,6 +1,6 @@
 // Touch / mouse / keyboard -> per-player intents.
 // Pure helpers at the top; createInput touches the DOM.
-import { screenToArena, screenToArenaVec, PORTRAIT_HUD } from './layout.js';
+import { screenToArena, screenToArenaVec, TOP_HUD } from './layout.js';
 import { createPairStrokeDetector, createCircleStrokeDetector } from './launch.js';
 
 export function playerForPoint(x, y, width, height, players) {
@@ -29,14 +29,14 @@ export function createTouchTracker() {
   };
 }
 
-export const SPECIAL_R = 34;
+export const SPECIAL_R = 40;
 
+// The big ability button: bottom corner of each player's own side, clear of the health bars.
 export function specialButton(i, width, height, players) {
-  const r = SPECIAL_R, m = 16;
+  const r = SPECIAL_R, m = 18;
   if (height > width) {
-    const bottom = { x: width - m - r, y: height - m - PORTRAIT_HUD - 12 - r, r };
-    if (players === 2 && i === 1) return { x: m + r, y: m + PORTRAIT_HUD + 12 + r, r };
-    return bottom;
+    if (players === 2 && i === 1) return { x: m + r, y: m + TOP_HUD + 10 + r, r };
+    return { x: width - m - r, y: height - m - r, r };
   }
   if (players === 2 && i === 0) return { x: m + r, y: height - m - r, r };
   return { x: width - m - r, y: height - m - r, r };

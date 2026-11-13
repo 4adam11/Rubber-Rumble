@@ -214,6 +214,44 @@ html, body {
 .delta.show { animation: delta-float 1.1s ease-out; }
 @keyframes delta-float { 0% { opacity: 0; transform: translateY(6px) scale(0.8); } 15% { opacity: 1; transform: translateY(0) scale(1.15); } 70% { opacity: 1; } 100% { opacity: 0; transform: translateY(-10px); } }
 
+/* ability + arena pickers */
+.sheet-wide { width: min(820px, 100%); }
+.ability-grid, .arena-grid { display: grid; gap: 10px; margin: 10px 0 14px; }
+.ability-grid { grid-template-columns: repeat(3, 1fr); }
+.arena-grid { grid-template-columns: repeat(3, 1fr); }
+.ability-card, .arena-card {
+  display: grid; justify-items: center; align-content: start; gap: 4px; text-align: center;
+  padding: 12px 10px; min-height: 120px; cursor: pointer; font: inherit; color: var(--ink);
+  background: rgba(255, 255, 255, 0.85);
+  border: 2.5px solid rgba(31, 42, 68, 0.22);
+  border-radius: 14px 18px 12px 16px;
+  transition: border-color 0.12s, transform 0.12s, box-shadow 0.12s;
+}
+.ability-card:hover, .arena-card:hover { border-color: var(--ink); transform: translateY(-2px); }
+.ability-card.is-on { border-color: var(--ac); box-shadow: 0 0 0 3px var(--ac) inset, 4px 4px 0 var(--ac); background: #fff; }
+.arena-card.is-on { border-color: var(--ink); box-shadow: 0 0 0 3px var(--ink) inset, 4px 4px 0 var(--ink); background: #fff; }
+.ability-card.pop, .arena-card.pop { animation: card-pop 0.35s cubic-bezier(.3,1.8,.5,1); }
+@keyframes card-pop { 0% { transform: scale(0.94); } 100% { transform: scale(1); } }
+.ability-icon {
+  display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%;
+  font-size: 28px; background: var(--ac); color: #fff; box-shadow: inset 0 -4px 0 rgba(0,0,0,0.2);
+}
+.ability-card b, .arena-card b { font: 700 18px var(--hand); }
+.ability-card small, .arena-card small { font-size: 12.5px; color: var(--ink-soft); line-height: 1.3; }
+.arena-card img { width: 120px; height: 120px; border-radius: 50%; }
+.level { font: 800 11px var(--sans); letter-spacing: 0.1em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; color: #fff; }
+.level-basic { background: #2a7a3b; }
+.level-medium { background: #d97706; }
+.level-hard { background: #b3261e; }
+.skip-intro {
+  position: absolute; right: 16px; bottom: max(16px, env(safe-area-inset-bottom));
+  pointer-events: auto; border: 0; border-radius: 999px; padding: 10px 18px; min-height: 44px;
+  font: 700 15px var(--sans); color: #fff; background: rgba(0, 0, 0, 0.45); cursor: pointer;
+}
+.screen.intro { background: none; pointer-events: auto; }
+.skip-area { position: absolute; inset: 0; border: 0; background: transparent; cursor: pointer; }
+.skip-intro { pointer-events: none; }
+
 /* results */
 .score { font: 700 20px var(--hand); color: var(--ink) !important; }
 .score b { font-size: 26px; }
@@ -265,6 +303,20 @@ kbd {
 }
 
 @media (max-width: 760px) {
+  .sheet-wide { padding-bottom: 92px; }
+  .ability-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .ability-card { min-height: 0; padding: 10px 8px; }
+  .ability-icon { width: 44px; height: 44px; font-size: 24px; }
+  .arena-grid { grid-template-columns: 1fr; }
+  .arena-card { grid-template-columns: 84px 1fr; grid-template-rows: auto auto auto; justify-items: start; text-align: left; column-gap: 12px; align-items: center; min-height: 0; }
+  .arena-card img { width: 84px; height: 84px; grid-row: 1 / span 3; }
+  .sticky-row {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; margin: 0;
+    padding: 10px 16px max(10px, env(safe-area-inset-bottom));
+    background: rgba(255, 253, 246, 0.97); box-shadow: 0 -6px 16px rgba(30, 10, 0, 0.25); flex-wrap: nowrap;
+  }
+  .sticky-row .btn { min-height: 52px; font-size: 19px; }
+  .sticky-row .btn-primary { flex: 2 1 0; }
   .sheet-picker { padding: 18px 12px 92px 30px; }
   .picker-head h2 { font-size: 24px; margin-bottom: 4px; }
   .picker-body { display: flex; flex-direction: column; gap: 10px; }
