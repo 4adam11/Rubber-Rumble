@@ -4,6 +4,7 @@ import { drawEraserSide, drawPencil, drawTopSide } from './art.js';
 import { ABILITIES, ABILITY_IDS } from './abilities.js';
 import { ARENAS, ARENA_IDS } from './arenas.js';
 import { paintArenaThumb } from './arena-art.js';
+import { DEMOS, drawDemo } from './demos.js';
 
 const ARCH = { attack: 'Attack', defense: 'Defense', stamina: 'Stamina', balance: 'Balance', wildcard: 'Wildcard' };
 const STATS = [['attack', 'Attack'], ['defense', 'Defense'], ['stamina', 'Stamina'], ['balance', 'Balance'], ['speed', 'Speed']];
@@ -67,6 +68,7 @@ export function createUI(root, handlers, opts = {}) {
     }
     if (action === 'ready') { handlers.action('ready', { eraserId: picker.eraserId, leadId: picker.leadId }); return; }
     if (action === 'pick-ability' || action === 'pick-arena') { select(value); return; }
+    if (action === 'howto-mode') { howto({ mode: value }); return; }
     if (action === 'ability-ready' || action === 'arena-ready') { handlers.action(action, choice.selected); return; }
     handlers.action(action, value);
   });
@@ -326,31 +328,65 @@ export function createUI(root, handlers, opts = {}) {
       </div>`, 'with-backdrop');
   }
 
-  function howto() {
+  // How to play: one animated card per control, all with the same eraser top.
+  let demoLoop = 0;
+  function howto(d = {}) {
+    const coarse = (() => { try { return matchMedia('(pointer: coarse)').matches; } catch { return false; } })();
+    const mode = d.mode || (coarse ? 'touch' : 'keys');
     mount('howto', `
       <div class="sheet sheet-howto">
         <h2>How to play</h2>
-        <ol class="rules">
-          <li><b>Build a top.</b> Pick an eraser (the body) and a pencil lead (the tip). Matching brands unlock combos like <em>Deadly Duo</em> (Apsara eraser + Nataraj HB).</li>
-          <li><b>Place it.</b> Slide your top along your side of the thali rim.</li>
-          <li><b>Twist!</b> Like doing it with two thumbs: flick two fingers past each other, again and again. On a keyboard, mash your two keys one after the other.</li>
-          <li><b>Let go</b> when the ring around your top is tight for a <em>Perfect Release</em>, with no wobble and extra spin.</li>
-          <li><b>Battle.</b> Nudge your top around (it costs a little spin) and fire your special once per round.</li>
-          <li>A top loses when it <b>stops</b>, <b>tips over</b> or gets <b>knocked out</b>. Best of 3 wins. Hard hits can <b>snap the lead</b>!</li>
-        </ol>
+        <div class="mode-toggle" role="tablist">
+          <button class="${mode === 'keys' ? 'is-on' : ''}" data-action="howto-mode" data-value="keys" role="tab" aria-selected="${mode === 'keys'}">⌨ Keyboard</button>
+          <button class="${mode === 'touch' ? 'is-on' : ''}" data-action="howto-mode" data-value="touch" role="tab" aria-selected="${mode === 'touch'}">👆 Touch</button>
+        </div>
+        <div class="demo-grid">
+          ${DEMOS.map((dm) => `
+            <figure class="demo-card">
+              <canvas class="demo-canvas" data-demo="${dm.id}" width="260" height="170" aria-hidden="true"></canvas>
+              <figcaption><b>${esc(dm.title)}</b><span>${esc(mode === 'touch' ? dm.touch : dm.text)}</span></figcaption>
+            </figure>`).join('')}
+        </div>
+        <ul class="rules">
+          <li><b>Build a top:</b> an eraser body + a pencil-lead tip. Matching brands unlock combos like <em>Deadly Duo</em>.</li>
+          <li><b>Health is spin.</b> It drains over time and drops on every hit. Heavy hits can <b>snap your lead</b>.</li>
+          <li>You lose a round when your health runs out, you <b>tip over</b>, or you get <b>knocked out</b>. Best of 3.</li>
+          <li><b>Arenas:</b> the Steel Thali is smooth; the Tiffin Lid has sticky dal stains; the Geometry Box has ink blots, shavings and a sharpener in the way.</li>
+        </ul>
         <table class="keys">
           <thead><tr><th></th><th>Player 1</th><th>Player 2</th></tr></thead>
           <tbody>
             <tr><td>Place / twist</td><td><kbd>A</kbd> <kbd>D</kbd></td><td><kbd>←</kbd> <kbd>→</kbd></td></tr>
             <tr><td>Let go</td><td><kbd>W</kbd></td><td><kbd>↑</kbd></td></tr>
             <tr><td>Steer</td><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td>Arrows</td></tr>
-            <tr><td>Special</td><td><kbd>Space</kbd></td><td><kbd>Enter</kbd></td></tr>
+            <tr><td>Ability</td><td><kbd>Space</kbd></td><td><kbd>Enter</kbd></td></tr>
             <tr><td>Pause</td><td colspan="2"><kbd>Esc</kbd> or <kbd>P</kbd></td></tr>
           </tbody>
         </table>
-        <p class="note">Touch: drag to place, flick two thumbs to twist, lift to let go. In battle, drag anywhere on your side to steer and tap ★ for your special. With a mouse vs the computer: drag to place, circle around your top to twist, release the button to let go.</p>
-        <button class="btn btn-primary" data-action="back" autofocus>Got it</button>
-      </div>`, 'with-backdrop scrolls');
+        <div class="row sticky-row">
+          <button class="btn btn-primary" data-action="back" autofocus>Got it</button>
+        </div>
+      </div>`, 'with-backdrop');
+    runDemos(mode);
+  }
+
+  function runDemos(mode) {
+    cancelAnimationFrame(demoLoop);
+    const canvases = [...root.querySelectorAll('.demo-canvas')];
+    const dpr = Math.min(2, devicePixelRatio || 1);
+    for (const c of canvases) { c.width = 260 * dpr; c.height = 170 * dpr; }
+    const t0 = now();
+    const frame = () => {
+      if (current !== 'howto') return;
+      const t = (now() - t0) / 1000;
+      for (const c of canvases) {
+        const g = c.getContext('2d');
+        g.setTransform(dpr, 0, 0, dpr, 0, 0);
+        drawDemo(g, c.dataset.demo, 260, 170, t, mode);
+      }
+      demoLoop = requestAnimationFrame(frame);
+    };
+    frame();
   }
 
   function hud(d) {
