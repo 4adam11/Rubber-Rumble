@@ -38,13 +38,21 @@ const DOODLE = `
   </g>
 </svg>`;
 
-export function createUI(root, handlers) {
+export const RESULT_GUARD_MS = 400;
+
+const GUARDED = new Set(['round', 'match']);
+
+export function createUI(root, handlers, opts = {}) {
+  const now = opts.now || (() => performance.now());
   let current = null;
+  let mountedAt = 0;
   let picker = null; // { player, eraserId, leadId }
 
   root.addEventListener('click', (e) => {
     const el = e.target.closest('[data-action]');
     if (!el || !root.contains(el)) return;
+    // a result screen pops up mid-battle: ignore a still-mashed Space/Enter or tap
+    if (GUARDED.has(current) && now() - mountedAt < RESULT_GUARD_MS) return;
     const { action, value } = el.dataset;
     handlers.click?.();
     if (action === 'pick-eraser' || action === 'pick-lead') {
@@ -58,6 +66,7 @@ export function createUI(root, handlers) {
 
   function mount(name, html, cls = '') {
     current = name;
+    mountedAt = now();
     root.innerHTML = `<div class="screen screen-${name} ${cls}" role="dialog" aria-label="${esc(name)}">${html}</div>`;
     const focus = root.querySelector('[autofocus], .btn-primary');
     focus?.focus({ preventScroll: true });

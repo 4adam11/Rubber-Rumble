@@ -1,16 +1,30 @@
 // Headless balance check: CPU(medium) vs CPU(medium) rounds.
-// Usage: node tools/balance.mjs [roundsPerMatchup]
+// Usage: node tools/balance.mjs [roundsPerMatchup] [seed]
+// Seeded, so the same arguments always print the same numbers.
 import { ERASERS, LEADS, buildTop } from '../src/parts.js';
 import { createWorld, step } from '../src/physics.js';
 import { cpuLaunch, createCpu } from '../src/ai.js';
 
 const N = Number(process.argv[2]) || 200;
+const SEED = Number(process.argv[3]) || 1;
 const DIFF = 'medium';
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const rng = mulberry32(SEED);
 
 function playRound(pa, pb) {
   const sa = buildTop(...pa), sb = buildTop(...pb);
-  const w = createWorld([sa, sb], [cpuLaunch(sa, DIFF, 0), cpuLaunch(sb, DIFF, 1)]);
-  const cpus = [createCpu(DIFF, 0), createCpu(DIFF, 1)];
+  const w = createWorld([sa, sb], [cpuLaunch(sa, DIFF, 0, rng), cpuLaunch(sb, DIFF, 1, rng)], rng);
+  const cpus = [createCpu(DIFF, 0, rng), createCpu(DIFF, 1, rng)];
   while (!w.over) step(w, cpus.map((c) => c.think(w, 1 / 120)));
   return { winner: w.result.winner, reason: w.result.reason, time: w.time };
 }
@@ -62,7 +76,7 @@ for (const [a, b] of pairs) {
   if (!bad) worst = Math.max(worst, r.winRateA, 1 - r.winRateA);
   rows.push(`${(r.winRateA * 100).toFixed(0).padStart(3)}%  ${r.avgTime.toFixed(1).padStart(5)}s  ${label(a)}  vs  ${label(b)}   ${JSON.stringify(r.reasons)}`);
 }
-console.log(`win% of left combo · mean round length · ${N} rounds each\n`);
+console.log(`win% of left combo · mean round length · ${N} rounds each · seed ${SEED}\n`);
 console.log(rows.join('\n'));
 
 // Deadly Duo and Sleepy Bench vs the field of all non-bad pairs

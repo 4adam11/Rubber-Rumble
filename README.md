@@ -24,7 +24,7 @@ npm test
 Balance check (thousands of CPU-vs-CPU rounds):
 
 ```bash
-node tools/balance.mjs 200
+node tools/balance.mjs 200 1   # rounds per matchup, seed
 ```
 
 ## How to play

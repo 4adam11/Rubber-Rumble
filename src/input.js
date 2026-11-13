@@ -150,7 +150,6 @@ export function createInput(target, getLayout, opts = {}) {
   function onMouseDown(e) {
     if (phase === 'menu' || players !== 1) return;
     if (e.button === 2) { if (phase === 'battle') edge[0].special = true; return; }
-    if (phase === 'battle' && insideButton(0, e.clientX, e.clientY)) { edge[0].special = true; return; }
     mouse = { x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY };
     circle[0].reset();
     if (phase === 'launch') feedSingle(0, e.clientX, e.clientY);

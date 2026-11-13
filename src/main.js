@@ -7,7 +7,7 @@ import {
 import { cpuLaunch, createCpu, pickCombo } from './ai.js';
 import { createRenderer, PLAYER_COLORS, arenaToScreen } from './render.js';
 import { createInput, specialButton } from './input.js';
-import { createMatch } from './match.js';
+import { createMatch, roundLabel } from './match.js';
 import { createUI } from './ui.js';
 import { createAudio } from './audio.js';
 import { loadSettings, saveSettings } from './settings.js';
@@ -79,7 +79,8 @@ function startRound() {
   if (isDemo()) return;
   input.setPhase('launch');
   ui.show('hud');
-  renderer.banner(`Round ${g.round}`, { sub: 'Place your top on the rim', size: 54, life: 1.3 });
+  const done = g.match.state().rounds;
+  renderer.banner(roundLabel(done, done.length), { sub: 'Place your top on the rim', size: 54, life: 1.3 });
 }
 
 function stepLaunch(dt) {
@@ -212,16 +213,19 @@ function showResult() {
   const names = [playerName(0), playerName(1)];
   const r = g.lastResult;
   if (st.over) {
-    const youLost = g.config.mode === 'cpu' && st.winner === 1;
-    youLost ? audio.lose() : audio.win();
+    if (!g.endSoundPlayed) { // not again when coming Back from Change parts
+      g.endSoundPlayed = true;
+      const youLost = g.config.mode === 'cpu' && st.winner === 1;
+      youLost ? audio.lose() : audio.win();
+    }
     ui.show('match', {
       headline: g.config.mode === 'cpu' ? (st.winner === 0 ? 'You win the match!' : 'CPU wins the match') : `Player ${st.winner + 1} wins!`,
       color: PLAYER_COLORS[st.winner], names, wins: st.wins,
-      rounds: st.rounds.map((x, k) => `Round ${k + 1}: ${x.winner === null ? 'draw, replayed' : `${names[x.winner]} (${SHORT[x.reason]})`}`),
+      rounds: st.rounds.map((x, k) => `${roundLabel(st.rounds, k)}: ${x.winner === null ? 'draw' : `${names[x.winner]} (${SHORT[x.reason]})`}`),
     });
   } else {
     ui.show('round', {
-      headline: r.winner === null ? 'Draw!' : `${names[r.winner]} ${winsWord(r.winner)} round ${g.round}!`,
+      headline: r.winner === null ? 'Draw!' : `${names[r.winner]} ${winsWord(r.winner)} ${roundLabel(st.rounds, st.rounds.length - 1).replace(' (replay)', '').toLowerCase()}!`,
       sub: describe(r), color: r.winner === null ? '#1f2a44' : PLAYER_COLORS[r.winner],
       names, wins: st.wins, draw: r.winner === null,
     });
