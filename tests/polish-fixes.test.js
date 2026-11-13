@@ -84,3 +84,20 @@ test('round labels count decisive rounds and mark replays', () => {
   assert.equal(roundLabel([D, D, W1], 2), 'Round 1 (replay)');
   assert.equal(roundLabel([W0, W1, D, D], 4), 'Round 3 (replay)');
 });
+
+// --- picker: stat bars change in place ---
+import { statChanges } from '../src/ui.js';
+import { buildTop } from '../src/parts.js';
+
+test('statChanges lists each stat with its old value, new value and delta', () => {
+  const a = buildTop('camlin-dustfree', 'doms-y1').card;
+  const b = buildTop('nataraj-621', 'doms-y1').card;
+  const ch = statChanges(a, b);
+  assert.deepEqual(ch.map((c) => c.key), ['attack', 'defense', 'stamina', 'balance', 'speed']);
+  const atk = ch.find((c) => c.key === 'attack');
+  assert.equal(atk.from, a.attack);
+  assert.equal(atk.to, b.attack);
+  assert.equal(atk.delta, b.attack - a.attack);
+  assert.ok(statChanges(a, a).every((c) => c.delta === 0));
+  assert.ok(statChanges(null, a).every((c) => c.from === 0 && c.to === a[c.key]));
+});

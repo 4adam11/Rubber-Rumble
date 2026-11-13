@@ -1,5 +1,6 @@
 // DOM menus on notebook paper. Talks to main.js only through handlers.action().
-import { ERASERS, LEADS, buildTop, SPECIAL_NAMES } from './parts.js';
+import { ERASERS, LEADS, buildTop } from './parts.js';
+import { drawEraserSide, drawPencil, drawTopSide } from './art.js';
 
 const ARCH = { attack: 'Attack', defense: 'Defense', stamina: 'Stamina', balance: 'Balance', wildcard: 'Wildcard' };
 const SPECIAL_DESC = {
@@ -18,10 +19,31 @@ const DIFF = [
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-function swatch(e) {
-  const band = e.band ? `<i style="background:${e.band}"></i>` : '';
-  return `<span class="swatch swatch-${e.shape}" style="--c:${e.color}">${band}</span>`;
+// Old/new value and change for each stat, so bars can animate instead of re-rendering.
+export function statChanges(prev, next) {
+  return STATS.map(([key]) => {
+    const from = prev ? prev[key] : 0;
+    return { key, from, to: next[key], delta: next[key] - from };
+  });
 }
+
+// Small drawings of the parts for the picker, cached as images.
+const thumbCache = new Map();
+function thumb(key, w, h, draw) {
+  if (thumbCache.has(key)) return thumbCache.get(key);
+  const dpr = Math.min(2, (typeof devicePixelRatio === 'number' && devicePixelRatio) || 1);
+  const c = document.createElement('canvas');
+  c.width = Math.round(w * dpr);
+  c.height = Math.round(h * dpr);
+  const g = c.getContext('2d');
+  g.scale(dpr, dpr);
+  draw(g);
+  const url = c.toDataURL();
+  thumbCache.set(key, url);
+  return url;
+}
+const eraserThumb = (id) => thumb(`e:${id}`, 64, 40, (g) => { g.translate(32, 22); drawEraserSide(g, id, 46); });
+const pencilThumb = (id) => thumb(`p:${id}`, 72, 20, (g) => drawPencil(g, id, 2, 10, 68, 10));
 
 
 export const RESULT_GUARD_MS = 400;
@@ -42,8 +64,7 @@ export function createUI(root, handlers, opts = {}) {
     const { action, value } = el.dataset;
     handlers.click?.();
     if (action === 'pick-eraser' || action === 'pick-lead') {
-      if (action === 'pick-eraser') picker.eraserId = value; else picker.leadId = value;
-      renderPicker();
+      updatePicker(action === 'pick-eraser' ? 'eraser' : 'lead', value);
       return;
     }
     if (action === 'ready') { handlers.action('ready', { eraserId: picker.eraserId, leadId: picker.leadId }); return; }
@@ -89,20 +110,25 @@ export function createUI(root, handlers, opts = {}) {
       </div>`, 'with-backdrop');
   }
 
-  function statBars(spec, color) {
+  function statRows(card) {
     return STATS.map(([k, label]) => {
-      const v = spec.card[k];
+      const v = card[k];
       const cells = Array.from({ length: 10 }, (_, i) => `<i class="${i < v ? 'on' : ''}"></i>`).join('');
-      return `<div class="stat"><span>${label}</span><b style="--pc:${color}">${cells}</b><em>${v}</em></div>`;
+      return `<div class="stat" data-stat="${k}"><span>${label}</span><b>${cells}</b><em>${v}</em><sup class="delta"></sup></div>`;
     }).join('');
   }
 
+  function comboHtml(spec) {
+    return spec.combo
+      ? `<div class="combo ${spec.combo.bad ? 'combo-bad' : ''}"><strong>${spec.combo.bad ? '⚠ ' : '★ '}${esc(spec.combo.name)}</strong><span>${esc(spec.combo.desc)}</span></div>`
+      : '<div class="combo combo-none"><span>No combo bonus. Try matching brands!</span></div>';
+  }
+
+  // Built once; picking a part only updates what changed.
   function renderPicker() {
     const d = picker;
     const spec = buildTop(d.eraserId, d.leadId);
-    const combo = spec.combo
-      ? `<div class="combo ${spec.combo.bad ? 'combo-bad' : ''}"><strong>${spec.combo.bad ? '⚠ ' : '★ '}${esc(spec.combo.name)}</strong><span>${esc(spec.combo.desc)}</span></div>`
-      : '<div class="combo combo-none"><span>No combo bonus. Try matching brands!</span></div>';
+    d.card = spec.card;
     mount('picker', `
       <div class="sheet sheet-picker" style="--pc:${d.color}">
         <header class="picker-head">
@@ -115,32 +141,92 @@ export function createUI(root, handlers, opts = {}) {
             <div class="chips">
               ${ERASERS.map((e) => `
                 <button class="chip ${e.id === d.eraserId ? 'is-on' : ''}" data-action="pick-eraser" data-value="${e.id}" aria-pressed="${e.id === d.eraserId}">
-                  ${swatch(e)}<span class="chip-text"><b>${esc(e.name)}</b><small>${ARCH[e.archetype]} · ${esc(e.note)}</small></span>
+                  <img class="part-img" src="${eraserThumb(e.id)}" alt=""><span class="chip-text"><b>${esc(e.name)}</b><small>${ARCH[e.archetype]} · ${esc(e.note)}</small></span>
                 </button>`).join('')}
             </div>
             <h3>Pencil lead <small>the tip</small></h3>
             <div class="chips">
               ${LEADS.map((l) => `
                 <button class="chip ${l.id === d.leadId ? 'is-on' : ''}" data-action="pick-lead" data-value="${l.id}" aria-pressed="${l.id === d.leadId}">
-                  <span class="lead-tip"></span><span class="chip-text"><b>${esc(l.name)}</b><small>${esc(l.note)}</small></span>
+                  <img class="part-img part-img-pencil" src="${pencilThumb(l.id)}" alt=""><span class="chip-text"><b>${esc(l.name)}</b><small>${esc(l.note)}</small></span>
                 </button>`).join('')}
             </div>
           </section>
           <aside class="card">
-            <div class="card-title">${esc(spec.eraserName)} <span>+</span> ${esc(spec.leadName)}</div>
-            ${combo}
-            <div class="stats">${statBars(spec, d.color)}</div>
-            <div class="special"><strong>Special: ${SPECIAL_NAMES[spec.special]}</strong><span>${SPECIAL_DESC[spec.special]}</span></div>
+            <div class="card-top">
+              <canvas class="preview" width="150" height="110" aria-hidden="true"></canvas>
+              <div class="card-title">${esc(spec.eraserName)} <span>+</span> ${esc(spec.leadName)}</div>
+            </div>
+            <div class="combo-slot">${comboHtml(spec)}</div>
+            <div class="stats">${statRows(spec.card)}</div>
             <div class="row">
               <button class="btn btn-ghost" data-action="back">← Back</button>
               <button class="btn btn-primary" data-action="ready">Ready!</button>
             </div>
           </aside>
         </div>
-      </div>`, 'with-backdrop scrolls');
-    const scroller = root.querySelector('.screen');
-    if (d.scroll) scroller.scrollTop = d.scroll;
-    scroller.addEventListener('scroll', () => { d.scroll = scroller.scrollTop; }, { passive: true });
+      </div>`, 'with-backdrop');
+    drawPreview(spec);
+  }
+
+  function drawPreview(spec) {
+    const c = root.querySelector('.preview');
+    if (!c || !c.getContext) return;
+    const dpr = Math.min(2, devicePixelRatio || 1);
+    c.width = 150 * dpr;
+    c.height = 110 * dpr;
+    const g = c.getContext('2d');
+    g.scale(dpr, dpr);
+    g.translate(75, 40);
+    drawTopSide(g, spec.eraserId, spec.leadId, 108);
+  }
+
+  // Swap one part: move the highlight, refill the bars, pop the combo.
+  function updatePicker(kind, value) {
+    const d = picker;
+    if (kind === 'eraser') d.eraserId = value; else d.leadId = value;
+    const spec = buildTop(d.eraserId, d.leadId);
+    const changes = statChanges(d.card, spec.card);
+    d.card = spec.card;
+
+    root.querySelectorAll(`[data-action="pick-${kind}"]`).forEach((b) => {
+      const on = b.dataset.value === value;
+      b.classList.toggle('is-on', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+    root.querySelector('.card-title').innerHTML = `${esc(spec.eraserName)} <span>+</span> ${esc(spec.leadName)}`;
+
+    const slot = root.querySelector('.combo-slot');
+    const before = slot.textContent;
+    slot.innerHTML = comboHtml(spec);
+    if (slot.textContent !== before) restartAnim(slot.firstElementChild, 'pop');
+
+    for (const ch of changes) {
+      const row = root.querySelector(`.stat[data-stat="${ch.key}"]`);
+      if (!row) continue;
+      row.querySelectorAll('i').forEach((cell, i) => {
+        // fill upward one cell after another, empty downward
+        const delay = ch.delta > 0 ? (i - ch.from) * 45 : (ch.from - 1 - i) * 45;
+        cell.style.transitionDelay = `${Math.max(0, delay)}ms`;
+        cell.classList.toggle('on', i < ch.to);
+      });
+      row.querySelector('em').textContent = ch.to;
+      const badge = row.querySelector('.delta');
+      if (ch.delta) {
+        badge.textContent = ch.delta > 0 ? `+${ch.delta}` : `−${-ch.delta}`;
+        badge.className = `delta ${ch.delta > 0 ? 'up' : 'down'}`;
+        restartAnim(badge, 'show');
+      }
+    }
+    drawPreview(spec);
+    restartAnim(root.querySelector('.preview'), 'bounce');
+  }
+
+  function restartAnim(el, cls) {
+    if (!el) return;
+    el.classList.remove(cls);
+    void el.offsetWidth; // restart the CSS animation
+    el.classList.add(cls);
   }
 
   function roundResult(d) {
@@ -215,7 +301,7 @@ export function createUI(root, handlers, opts = {}) {
 
   return {
     show(name, data = {}) {
-      if (name === 'picker') { picker = { ...data, scroll: 0 }; renderPicker(); return; }
+      if (name === 'picker') { picker = { ...data }; renderPicker(); return; }
       ({ title, difficulty, round: roundResult, match: matchResult, pause, howto, hud })[name](data);
     },
     hide() { current = null; root.innerHTML = ''; },
