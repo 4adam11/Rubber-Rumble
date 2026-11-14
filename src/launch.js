@@ -10,15 +10,19 @@ export const LAUNCH = {
   SLIDE_RANGE: Math.PI / 3,
   SLIDE_SPEED: 1.5,
   STROKE_PX: 30,
+  PAD_TWIST_TIME: 4.5, // phones: more time to pull, hold and charge on the twist pad
+  CHARGE_TIME: 2.2,    // seconds of a full pull to charge to 80% (the last 20% charges at half speed)
+  PULL_MIN: 0.3,       // how far apart the grips must be before anything charges
+  PULL_FULL: 0.85,     // pulled this far apart = charging at full speed
 };
 
 const TAU = Math.PI * 2;
 const wrap = (a) => ((((a + Math.PI) % TAU) + TAU) % TAU) - Math.PI; // [-π, π)
 const homeAngle = (side) => (side === 0 ? Math.PI : 0);
 
-export function createLaunch(spec, side) {
+export function createLaunch(spec, side, { twistTime = LAUNCH.TWIST_TIME } = {}) {
   return {
-    spec, side, phase: 'place', t: 0,
+    spec, side, phase: 'place', t: 0, twistTime,
     rimAngle: homeAngle(side), rpm: 0, lastKey: null, result: null,
     spinDir: 0, // set by the first flick: 1 clockwise, -1 anticlockwise
   };
@@ -45,6 +49,23 @@ export function addStroke(state, strength, dir = 0) {
   const gain = (max / LAUNCH.STROKES_TO_MAX) * strength * (state.rpm > 0.8 * max ? 0.5 : 1);
   state.rpm = Math.min(max, state.rpm + gain);
 }
+
+// The twist pad: grips pulled apart (pull −1…1, sign = which way the top grip went) and held.
+// Spin builds every frame they are held apart; returns the spin gained.
+export function chargeSpin(state, pull, dt) {
+  const k = Math.abs(pull);
+  if (state.phase !== 'twist' || !(k >= LAUNCH.PULL_MIN) || !(dt > 0)) return 0;
+  if (!state.spinDir) state.spinDir = Math.sign(pull);
+  const max = state.spec.maxRPM;
+  const effort = Math.min(1, (k - LAUNCH.PULL_MIN) / (LAUNCH.PULL_FULL - LAUNCH.PULL_MIN));
+  const rate = (0.8 * max / LAUNCH.CHARGE_TIME) * Math.max(0.15, effort) * (state.rpm >= 0.8 * max ? 0.5 : 1);
+  const before = state.rpm;
+  state.rpm = Math.min(max, state.rpm + rate * dt);
+  return state.rpm - before;
+}
+
+// time left to twist / charge
+export const twistLeft = (state) => Math.max(0, LAUNCH.PLACE_TIME + state.twistTime - state.t);
 
 export function keyStroke(state, key) {
   if (state.phase !== 'twist') return;
@@ -80,7 +101,7 @@ export function updateLaunch(state, dt) {
   if (state.phase === 'done') return;
   state.t += dt;
   if (state.phase === 'place' && state.t >= LAUNCH.PLACE_TIME - 1e-9) state.phase = 'twist';
-  if (state.phase === 'twist' && state.t >= LAUNCH.PLACE_TIME + LAUNCH.TWIST_TIME - 1e-9) finish(state, 0.5);
+  if (state.phase === 'twist' && state.t >= LAUNCH.PLACE_TIME + state.twistTime - 1e-9) finish(state, 0.5);
 }
 
 // Two fingers moving past each other. Each reversal of ≥ px (30 by default)

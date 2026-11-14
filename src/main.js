@@ -2,7 +2,7 @@
 import { buildTop } from './parts.js';
 import { createWorld, simulate, CONST } from './physics.js';
 import {
-  LAUNCH, createLaunch, slide, setPlace, keyStroke, addStroke, release, updateLaunch,
+  LAUNCH, createLaunch, slide, setPlace, keyStroke, addStroke, release, updateLaunch, chargeSpin, twistLeft,
 } from './launch.js';
 import { cpuLaunch, createCpu, pickCombo, pickAbility } from './ai.js';
 import { createRenderer, PLAYER_COLORS, arenaToScreen } from './render.js';
@@ -135,7 +135,11 @@ function startRound() {
     g.specs[1] = buildTop(p.eraserId, p.leadId);
     g.config.abilities[1] = pickAbility('hard', g.specs[1], g.specs[0]);
   }
-  g.launches = g.specs.map((spec, i) => createLaunch(spec, i));
+  // phone players charge on the twist pad, so they get longer to pull, hold and time the release
+  g.launches = g.specs.map((spec, i) => createLaunch(spec, i, {
+    twistTime: coarse && !isCpu(i) ? LAUNCH.PAD_TWIST_TIME : LAUNCH.TWIST_TIME,
+  }));
+  g.chargeTick = [0, 0];
   const diff = g.config.difficulty || 'medium';
   g.cpuPlans = [0, 1].map((i) => (isCpu(i) ? cpuLaunch(g.specs[i], diff, i) : null));
   g.cpus = [0, 1].map((i) => (isCpu(i) ? createCpu(diff, i) : null));
@@ -167,7 +171,7 @@ function stepLaunch(dt) {
         d = Math.atan2(Math.sin(d), Math.cos(d));
         s.rimAngle += d * Math.min(1, dt * 3);
       } else if (s.phase === 'twist') {
-        const k = Math.min(1, (s.t - LAUNCH.PLACE_TIME) / (LAUNCH.TWIST_TIME * 0.9));
+        const k = Math.min(1, (s.t - LAUNCH.PLACE_TIME) / (s.twistTime * 0.9));
         s.rpm = (plan.rpm / (plan.perfect ? 1.05 : 1)) * k;
       }
       updateLaunch(s, dt);
@@ -180,7 +184,12 @@ function stepLaunch(dt) {
     const before = s.rpm;
     for (const k of inp.keyStrokes) keyStroke(s, k);
     for (const v of inp.strokes) addStroke(s, Math.abs(v), Math.sign(v));
-    if (s.rpm > before) { audio.stroke(); buzz(8); }
+    const charged = inp.pull != null ? chargeSpin(s, inp.pull, dt) : 0;
+    if (charged > 0) {
+      // holding the grips apart: a steady rubbery creak and a buzz while it charges
+      g.chargeTick[i] -= dt;
+      if (g.chargeTick[i] <= 0) { audio.stroke(); buzz(12); g.chargeTick[i] = 0.16; }
+    } else if (s.rpm > before) { audio.stroke(); buzz(8); }
     if (inp.release) release(s);
     const was = s.phase;
     updateLaunch(s, dt);
@@ -191,6 +200,13 @@ function stepLaunch(dt) {
       buzz([20, 30, 20]);
     }
   });
+  // the top whirs up as it is twisted / charged
+  if (!isDemo()) {
+    g.launches.forEach((s, i) => {
+      const a = s.rimAngle, x = LAUNCH.START_RADIUS * Math.cos(a), y = LAUNCH.START_RADIUS * Math.sin(a);
+      audio.spin(i, s.phase === 'twist' ? 0.85 * (s.rpm / s.spec.maxRPM) : 0, { pan: panAt(x, y) });
+    });
+  }
   if (g.launches.every((s) => s.phase === 'done')) {
     g.timer += dt;
     if (g.timer > 0.45) startBattle();
@@ -693,7 +709,11 @@ function hints(i) {
     return coarse ? `Drag to place · ${left}s` : `${keys[0]}/${keys[1]} to place · ${left}s`;
   }
   if (s.phase === 'twist') {
-    if (coarse) return s.spinDir ? 'Keep rubbing! Lift both thumbs to launch' : 'Rub the two grips! First swipe sets the spin';
+    if (coarse) {
+      const left = twistLeft(s).toFixed(1);
+      return s.spinDir ? `Charging ${Math.round((100 * s.rpm) / s.spec.maxRPM)}% · ${left}s`
+        : `Pull the grips apart & hold · ${left}s`;
+    }
     if (vsCpu()) return `Mash ${keys[0]}↔${keys[1]} · start on ${keys[1]} for ↻, ${keys[0]} for ↺ · ${keys[2]} to let go`;
     return `Mash ${keys[0]}↔${keys[1]}! ${keys[2]} to let go`;
   }
@@ -740,7 +760,9 @@ function drawTwistPads(ctx, L) {
   for (const i of humans) {
     const s = game.launches[i];
     if (!s || s.phase === 'done') continue;
-    drawTwistPad(ctx, twistPad(i, L, input.players), input.padState(i) || {}, {
+    const st = input.padState(i) || {};
+    st.charging = s.phase === 'twist' && st.pull != null && Math.abs(st.pull) >= LAUNCH.PULL_MIN && s.rpm < s.spec.maxRPM;
+    drawTwistPad(ctx, twistPad(i, L, input.players), st, {
       color: PLAYER_COLORS[i], clock: renderer.clock, dim: s.phase === 'place',
     });
   }

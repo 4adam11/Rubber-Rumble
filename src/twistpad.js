@@ -1,9 +1,10 @@
 // The phone twist pad: two grips stacked one above the other at the bottom of the screen.
-// Put a thumb on each and swipe them past each other, back and forth, to spin the top up.
+// Put a thumb on each, pull them apart (top grip one way, bottom grip the other) and hold:
+// the spin charges for as long as you hold. Let go of both to launch.
 // Pure geometry + canvas drawing, no DOM.
 import { THALI_OUTER } from './layout.js';
 
-export const PAD = { ROW_H: 50, GAP: 12, GRIP_W: 66, MAX_W: 340, STROKE_PX: 40 };
+export const PAD = { ROW_H: 50, GAP: 12, GRIP_W: 66, MAX_W: 340 };
 export const PAD_H = PAD.ROW_H * 2 + PAD.GAP;
 export const HUD_BUTTONS_W = 66; // the pause / sound column on the right edge
 
@@ -45,8 +46,24 @@ export function gripAt(pad, x, y) {
 
 // a grip's drawn position along its track (local x), kept inside the track
 export function gripX(pad, x) {
-  const lim = pad.w / 2 - PAD.GRIP_W / 2 - 4;
+  const lim = reachOf(pad);
   return Math.max(-lim, Math.min(lim, (x - pad.cx) * pad.flip));
+}
+
+const reachOf = (pad) => pad.w / 2 - PAD.GRIP_W / 2 - 4;
+
+// how far apart the grips are pulled: −1…1, positive when the top grip went right
+export function pullOf(pad, top, bottom) {
+  return Math.max(-1, Math.min(1, (top - bottom) / (2 * reachOf(pad))));
+}
+
+// the show-me loop when nobody holds the pad: 0 → pull apart → hold → spring back (0…1)
+export function idlePull(clock) {
+  const T = clock % 2.6;
+  const ease = (x) => 1 - (1 - x) ** 3;
+  if (T < 0.45) return ease(T / 0.45);
+  if (T < 2.1) return 1;
+  return 1 - ease(Math.min(1, (T - 2.1) / 0.35));
 }
 
 export const rowY = (row) => (row === 'top' ? -1 : 1) * (PAD.GAP / 2 + PAD.ROW_H / 2);
@@ -116,23 +133,43 @@ function drawGrip(g, x, y, color, held, arrow) {
   g.restore();
 }
 
-// st: { top, bottom } grip positions (local x, null when no thumb), flash 0..1 after each stroke
+// a rubber band stretched between the two grips: tighter, brighter and humming as it charges
+function drawBand(g, xt, xb, color, stretch, charging, clock) {
+  const yt = rowY('top') + PAD.ROW_H / 2 - 8, yb = rowY('bottom') - PAD.ROW_H / 2 + 8;
+  const k = Math.min(1, Math.abs(stretch));
+  g.save();
+  g.lineCap = 'round';
+  if (charging) {
+    g.shadowColor = '#ffd23f';
+    g.shadowBlur = 10 + 6 * Math.sin(clock * 30);
+  }
+  g.strokeStyle = charging ? '#ffcf33' : color;
+  g.lineWidth = 7 - k * 3;
+  g.beginPath();
+  const midX = (xt + xb) / 2 + (charging ? Math.sin(clock * 55) * 1.5 : 0);
+  g.moveTo(xt, yt);
+  g.quadraticCurveTo(midX, (yt + yb) / 2, xb, yb);
+  g.stroke();
+  g.restore();
+}
+
+// st: { top, bottom } grip positions (local x, null when no thumb), charging while spin is building
 export function drawTwistPad(g, pad, st = {}, { color = '#2563eb', clock = 0, dim = false, label = true } = {}) {
   const { w, h } = pad;
   const R = PAD.ROW_H;
   const idle = st.top == null && st.bottom == null;
-  const reach = w / 2 - PAD.GRIP_W / 2 - 8;
-  const swing = Math.sin(clock * 5) * reach * 0.75;
-  const goingRight = Math.cos(clock * 5) > 0 ? 1 : -1;
+  const reach = reachOf(pad) - 4;
+  const show = idlePull(clock) * reach;
+  const charging = !!st.charging;
   g.save();
   g.translate(pad.cx, pad.cy);
   if (pad.flip < 0) g.rotate(Math.PI);
   if (dim) g.globalAlpha = 0.6;
 
   // backing plate
-  g.shadowColor = 'rgba(0,0,0,0.25)';
-  g.shadowBlur = 12;
-  g.shadowOffsetY = 3;
+  g.shadowColor = charging ? color : 'rgba(0,0,0,0.25)';
+  g.shadowBlur = charging ? 18 : 12;
+  g.shadowOffsetY = charging ? 0 : 3;
   rr(g, -w / 2 - 8, -h / 2 - 8, w + 16, h + 16, 18);
   g.fillStyle = 'rgba(255,253,246,0.94)';
   g.fill();
@@ -166,34 +203,24 @@ export function drawTwistPad(g, pad, st = {}, { color = '#2563eb', clock = 0, di
     }
     g.stroke();
     const held = st[row] != null;
-    const x = held ? st[row] : (row === 'top' ? swing : -swing);
-    pos[row] = x;
-    const dir = row === 'top' ? goingRight : -goingRight;
-    drawGrip(g, x, yc, color, held, idle && !dim ? dir : 0);
-    if (idle && !dim) drawThumb(g, x, yc + 4, 30, 0.55);
+    pos[row] = held ? st[row] : (row === 'top' ? show : -show);
   }
 
-  // graphite sparks where the grips rub past each other
-  if (st.flash > 0) {
-    const mx = (pos.top + pos.bottom) / 2;
-    g.save();
-    g.globalAlpha *= st.flash;
-    g.strokeStyle = '#ffd23f';
-    g.lineWidth = 3;
-    g.lineCap = 'round';
-    g.beginPath();
-    for (let k = 0; k < 7; k++) {
-      const a = (k / 7) * Math.PI * 2 + clock * 3;
-      const r0 = 6, r1 = 6 + 18 * (1.2 - st.flash);
-      g.moveTo(mx + Math.cos(a) * r0, Math.sin(a) * r0 * 0.6);
-      g.lineTo(mx + Math.cos(a) * r1, Math.sin(a) * r1 * 0.6);
-    }
-    g.stroke();
-    g.restore();
+  const stretch = (pos.top - pos.bottom) / (2 * reachOf(pad));
+  drawBand(g, pos.top, pos.bottom, color, stretch, charging, clock);
+
+  for (const row of ['top', 'bottom']) {
+    const held = st[row] != null;
+    const shake = charging ? Math.sin(clock * 70 + (row === 'top' ? 0 : 2)) * 1.6 : 0;
+    const out = row === 'top' ? 1 : -1; // idle hint: top grip goes right, bottom goes left
+    drawGrip(g, pos[row] + shake, rowY(row), color, held, idle && !dim ? out : 0);
+    if (idle && !dim) drawThumb(g, pos[row], rowY(row) + 4, 30, 0.55);
   }
 
   if (label && !dim) {
-    const text = idle ? 'Swipe the grips past each other ⇄' : 'Faster! Back and forth!';
+    const text = idle ? 'Pull the grips apart and hold ⇄'
+      : charging ? 'Charging! Let go on the tight ring'
+        : st.top == null || st.bottom == null ? 'Both thumbs on the grips!' : 'Pull them further apart!';
     g.font = '800 15px system-ui, sans-serif';
     const tw = g.measureText(text).width;
     if (tw > w + 12) g.font = `800 ${Math.max(10, Math.floor((15 * (w + 12)) / tw))}px system-ui, sans-serif`; // fit the pad
@@ -203,7 +230,7 @@ export function drawTwistPad(g, pad, st = {}, { color = '#2563eb', clock = 0, di
     g.lineJoin = 'round';
     g.strokeStyle = '#fffdf6';
     g.strokeText(text, 0, -h / 2 - 20);
-    g.fillStyle = color;
+    g.fillStyle = charging ? '#16a34a' : color;
     g.fillText(text, 0, -h / 2 - 20);
   }
   g.restore();

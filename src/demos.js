@@ -1,14 +1,14 @@
 // Little looping animations for "How to play". Every demo uses the same top, so players
 // learn one prop doing five things. drawDemo returns the keys that are "pressed" this frame.
 import { drawEraserTop, drawLeadTop, drawTopSide } from './art.js';
-import { PAD, PAD_H, drawTwistPad, drawThumb, rowY } from './twistpad.js';
+import { PAD, PAD_H, drawTwistPad, drawThumb, rowY, idlePull } from './twistpad.js';
 
 export const DEMO_PROP = { eraserId: 'apsara-nondust', leadId: 'nataraj-hb' };
 
 export const DEMOS = [
   { id: 'place', title: '1 · Place', text: 'Slide your top along your side of the rim before the countdown ends.', touch: 'Drag your top along the rim.' },
-  { id: 'twist', title: '2 · Twist', text: 'Like spinning it between two thumbs: alternate your two keys as fast as you can.', touch: 'One thumb on each grip at the bottom: rub them past each other, fast.' },
-  { id: 'release', title: '3 · Let go', text: 'Let go when the ring is tight for a PERFECT release: no wobble, extra spin.', touch: 'Lift both thumbs off the grips when the ring is tight.' },
+  { id: 'twist', title: '2 · Twist', text: 'Like spinning it between two thumbs: alternate your two keys as fast as you can.', touch: 'One thumb on each grip at the bottom: pull them apart and hold to charge the spin.' },
+  { id: 'release', title: '3 · Let go', text: 'Let go when the ring is tight for a PERFECT release: no wobble, extra spin.', touch: 'Let go of both grips when the ring is tight.' },
   { id: 'steer', title: '4 · Steer', text: 'Nudge your top around the arena. Every nudge costs a little health.', touch: 'Drag anywhere on your side like a joystick.' },
   { id: 'ability', title: '5 · Comeback', text: 'At 30% health your ability unlocks. Fire it once to turn the fight.', touch: 'Tap the big ability button when it lights up.' },
 ];
@@ -146,15 +146,16 @@ export function drawDemo(g, id, w, h, t, mode = 'keys') {
     drawTopSide(g, DEMO_PROP.eraserId, DEMO_PROP.leadId, size);
     g.restore();
     if (mode === 'touch') {
-      // the phone twist pad: two grips rubbed past each other
+      // the phone twist pad: grips pulled apart and held while the spin charges
       const sc = Math.min(0.5, (w - 40) / (PAD.MAX_W + 16));
       const pad = { cx: 0, cy: 0, w: PAD.MAX_W, h: PAD_H, flip: 1 };
       const reach = pad.w / 2 - PAD.GRIP_W / 2 - 8;
-      const gx = Math.sin(t * 6 * Math.PI / 2) * reach * 0.8;
+      const pull = idlePull(t);
+      const gx = pull * reach;
       g.save();
       g.translate(cx, ah - (PAD_H * sc) / 2 - 8);
       g.scale(sc, sc);
-      drawTwistPad(g, pad, { top: gx, bottom: -gx, flash: Math.abs(Math.cos(t * 3 * Math.PI)) > 0.92 ? 1 : 0 }, { color: BLUE, clock: t, label: false });
+      drawTwistPad(g, pad, { top: gx, bottom: -gx, charging: pull > 0.99 }, { color: BLUE, clock: t, label: false });
       drawThumb(g, gx, rowY('top') + 4, 44);
       drawThumb(g, -gx, rowY('bottom') + 4, 44);
       g.restore();
@@ -162,8 +163,8 @@ export function drawDemo(g, id, w, h, t, mode = 'keys') {
       thumb(g, cx - size * 0.62, cy - size * 0.05 + k * 12, 30);
       thumb(g, cx + size * 0.62, cy - size * 0.05 - k * 12, 30);
     }
-    // spin gauge filling up
-    const fill = (t % 2.4) / 2.4;
+    // spin gauge filling up (on the pad: only while the grips are held apart)
+    const fill = touch ? (t % 2.6 < 2.1 ? Math.min(1, Math.max(0, (t % 2.6 - 0.45) / 1.65)) : 0) : (t % 2.4) / 2.4;
     g.fillStyle = 'rgba(31,42,68,0.15)';
     g.fillRect(16, 12, 10, ah - 24);
     g.fillStyle = BLUE;

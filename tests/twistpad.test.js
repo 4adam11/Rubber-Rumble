@@ -1,8 +1,9 @@
-// The phone twist pad: two stacked grips rubbed past each other to spin the top.
+// The phone twist pad: two stacked grips pulled apart and held to charge the spin.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { computeLayout, THALI_OUTER } from '../src/layout.js';
-import { twistPad, gripAt, gripX, drawTwistPad, PAD, HUD_BUTTONS_W } from '../src/twistpad.js';
+import { twistPad, gripAt, gripX, pullOf, idlePull, drawTwistPad, PAD, HUD_BUTTONS_W } from '../src/twistpad.js';
+import { LAUNCH, createLaunch, updateLaunch, chargeSpin, twistLeft } from '../src/launch.js';
 import { createInput } from '../src/input.js';
 
 const SCREENS = [[375, 812], [375, 667], [360, 640], [812, 375], [667, 375], [1024, 768]];
@@ -68,9 +69,9 @@ function fakeCtx() {
   });
 }
 
-test('the pad draws idle, dimmed, held and flashing', () => {
+test('the pad draws idle, dimmed, held and charging', () => {
   const pad = { cx: 200, cy: 600, w: 300, h: 112, flip: -1 };
-  for (const [st, opt] of [[{}, {}], [{}, { dim: true }], [{ top: 30, bottom: -30, flash: 0.6 }, {}]]) {
+  for (const [st, opt] of [[{}, {}], [{}, { dim: true }], [{ top: 30, bottom: -30, charging: true }, {}], [{ top: 30, bottom: null }, {}]]) {
     const ctx = fakeCtx();
     drawTwistPad(ctx, pad, st, { clock: 1.3, ...opt });
     assert.ok(ctx.calls.includes('fill'));
@@ -78,7 +79,70 @@ test('the pad draws idle, dimmed, held and flashing', () => {
   }
 });
 
-// --- input: rubbing the grips makes twist strokes ---
+test('pull: 0 at rest, ±1 with the grips at opposite ends', () => {
+  const pad = { cx: 200, cy: 600, w: 300, h: 112, flip: 1 };
+  assert.equal(pullOf(pad, 0, 0), 0);
+  const end = gripX(pad, 9999);
+  assert.equal(pullOf(pad, end, -end), 1);
+  assert.equal(pullOf(pad, -end, end), -1);
+  assert.equal(pullOf(pad, end, 0), 0.5);
+});
+
+test('the idle hint pulls apart, holds, and springs back', () => {
+  assert.equal(idlePull(0), 0);
+  assert.equal(idlePull(1.2), 1);
+  assert.ok(idlePull(2.6 - 0.01) < 0.05);
+});
+
+// --- charging rules ---
+const spec = () => ({ maxRPM: 1000, radius: 0.12 });
+const twisting = (opts) => { const s = createLaunch(spec(), 0, opts); updateLaunch(s, LAUNCH.PLACE_TIME); return s; };
+
+test('holding a full pull charges to 80% in CHARGE_TIME, then slower to the top', () => {
+  const s = twisting({ twistTime: LAUNCH.PAD_TWIST_TIME });
+  const dt = 1 / 60;
+  let t = 0;
+  while (s.rpm < 800 - 1e-6) { chargeSpin(s, 1, dt); t += dt; }
+  assert.ok(Math.abs(t - LAUNCH.CHARGE_TIME) < 0.05, `80% after ${t.toFixed(2)}s`);
+  while (s.rpm < 1000 && t < 10) { chargeSpin(s, 1, dt); t += dt; }
+  assert.ok(t < LAUNCH.PAD_TWIST_TIME - 1, `full in ${t.toFixed(2)}s leaves time to pick the release`);
+  assert.equal(chargeSpin(s, 1, dt), 0, 'stops at max');
+});
+
+test('a weak pull charges nothing; a half pull charges slower than a full one', () => {
+  const a = twisting(), b = twisting(), c = twisting();
+  assert.equal(chargeSpin(a, LAUNCH.PULL_MIN - 0.05, 0.5), 0);
+  chargeSpin(b, 0.55, 0.5);
+  chargeSpin(c, 1, 0.5);
+  assert.ok(b.rpm > 0 && b.rpm < c.rpm);
+});
+
+test('the first pull sets the spin direction', () => {
+  const r = twisting(), l = twisting();
+  chargeSpin(r, 0.9, 0.1);
+  chargeSpin(l, -0.9, 0.1);
+  chargeSpin(l, 0.9, 0.1);
+  assert.equal(r.spinDir, 1);
+  assert.equal(l.spinDir, -1);
+});
+
+test('no charging before the twist starts', () => {
+  const s = createLaunch(spec(), 0);
+  assert.equal(chargeSpin(s, 1, 0.5), 0);
+});
+
+test('phone players get longer to charge', () => {
+  const pad = createLaunch(spec(), 0, { twistTime: LAUNCH.PAD_TWIST_TIME });
+  const keys = createLaunch(spec(), 1);
+  assert.ok(LAUNCH.PAD_TWIST_TIME > LAUNCH.TWIST_TIME);
+  updateLaunch(pad, LAUNCH.PLACE_TIME + LAUNCH.TWIST_TIME + 0.1);
+  updateLaunch(keys, LAUNCH.PLACE_TIME + LAUNCH.TWIST_TIME + 0.1);
+  assert.equal(pad.phase, 'twist');
+  assert.equal(keys.phase, 'done');
+  assert.ok(Math.abs(twistLeft(pad) - (LAUNCH.PAD_TWIST_TIME - LAUNCH.TWIST_TIME - 0.1)) < 1e-9);
+});
+
+// --- input: thumbs on the grips report the pull ---
 function touchRig(players = 1) {
   const handlers = {};
   const target = { addEventListener: (t, fn) => { handlers[t] = fn; }, removeEventListener: () => {} };
@@ -91,70 +155,54 @@ function touchRig(players = 1) {
     changedTouches: list.map(([id, x, y]) => ({ identifier: id, clientX: x, clientY: y })),
     preventDefault() {},
   });
-  return { input, ev, pad };
+  const ty = pad.cy - PAD.ROW_H / 2, by = pad.cy + PAD.ROW_H / 2;
+  return { input, ev, pad, ty, by };
 }
 
-// swing: how far the gap between the thumbs changes on each swipe (each thumb moves a quarter of it)
-function rub(ev, pad, swipes, swing = 120) {
-  const ty = pad.cy - PAD.ROW_H / 2, by = pad.cy + PAD.ROW_H / 2;
-  ev('touchstart', [[1, pad.cx, ty]]);
-  ev('touchstart', [[2, pad.cx, by]]);
-  for (let k = 0; k < swipes; k++) {
-    const d = (k % 2 === 0 ? 1 : -1) * swing / 4;
-    ev('touchmove', [[1, pad.cx + d, ty], [2, pad.cx - d, by]]);
-  }
-}
-
-test('two thumbs rubbing the grips past each other give one stroke per swipe', () => {
-  const { input, ev, pad } = touchRig();
+test('pulling the grips apart and holding reports a steady pull', () => {
+  const { input, ev, pad, ty, by } = touchRig();
   input.setPhase('launch');
-  rub(ev, pad, 6);
-  const { strokes, placeAngle } = input.poll(0);
-  assert.equal(strokes.length, 6);
-  assert.ok(strokes[0] > 0, 'top grip swiped right first: clockwise');
-  assert.equal(placeAngle, null, 'grabbing the grips does not move the top');
-  const st = input.padState(0);
-  assert.ok(st.top !== null && st.bottom !== null && st.flash > 0);
-});
-
-test('swiping the top grip left first spins the other way', () => {
-  const { input, ev, pad } = touchRig();
-  input.setPhase('launch');
-  const ty = pad.cy - PAD.ROW_H / 2, by = pad.cy + PAD.ROW_H / 2;
   ev('touchstart', [[1, pad.cx, ty], [2, pad.cx, by]]);
-  ev('touchmove', [[1, pad.cx - 45, ty], [2, pad.cx + 45, by]]);
-  assert.ok(input.poll(0).strokes[0] < 0);
+  assert.equal(input.poll(0).pull, 0);
+  ev('touchmove', [[1, pad.cx + 200, ty], [2, pad.cx - 200, by]]);
+  for (let k = 0; k < 3; k++) assert.equal(input.poll(0).pull, 1, 'held = still pulling, frame after frame');
+  const st = input.padState(0);
+  assert.ok(st.top > 0 && st.bottom < 0);
 });
 
-test('one thumb alone on a grip does nothing', () => {
-  const { input, ev, pad } = touchRig();
+test('pulling the top grip left gives a negative pull (the other spin)', () => {
+  const { input, ev, pad, ty, by } = touchRig();
   input.setPhase('launch');
-  const ty = pad.cy - PAD.ROW_H / 2;
+  ev('touchstart', [[1, pad.cx, ty], [2, pad.cx, by]]);
+  ev('touchmove', [[1, pad.cx - 60, ty], [2, pad.cx + 60, by]]);
+  assert.ok(input.poll(0).pull < -0.3);
+});
+
+test('one thumb alone on a grip gives no pull', () => {
+  const { input, ev, pad, ty } = touchRig();
+  input.setPhase('launch');
   ev('touchstart', [[1, pad.cx, ty]]);
-  for (let k = 0; k < 6; k++) ev('touchmove', [[1, pad.cx + (k % 2 ? -60 : 60), ty]]);
-  assert.equal(input.poll(0).strokes.length, 0);
+  ev('touchmove', [[1, pad.cx + 200, ty]]);
+  const p = input.poll(0);
+  assert.equal(p.pull, null);
+  assert.equal(p.placeAngle, null, 'grabbing the grips does not move the top');
 });
 
 test('a second thumb on the same grip is ignored', () => {
-  const { input, ev, pad } = touchRig();
+  const { input, ev, pad, ty } = touchRig();
   input.setPhase('launch');
-  const ty = pad.cy - PAD.ROW_H / 2;
   ev('touchstart', [[1, pad.cx - 40, ty], [2, pad.cx + 40, ty]]);
   assert.equal(input.padState(0).bottom, null);
 });
 
-test('lifting both thumbs lets go', () => {
-  const { input, ev, pad } = touchRig();
+test('letting go of both grips releases', () => {
+  const { input, ev, pad, ty, by } = touchRig();
   input.setPhase('launch');
-  rub(ev, pad, 4);
+  ev('touchstart', [[1, pad.cx, ty], [2, pad.cx, by]]);
+  ev('touchmove', [[1, pad.cx + 200, ty], [2, pad.cx - 200, by]]);
   input.poll(0);
   ev('touchend', [[1, 0, 0], [2, 0, 0]]);
-  assert.equal(input.poll(0).release, true);
-});
-
-test('tiny jiggles are not strokes', () => {
-  const { input, ev, pad } = touchRig();
-  input.setPhase('launch');
-  rub(ev, pad, 6, PAD.STROKE_PX - 6);
-  assert.equal(input.poll(0).strokes.length, 0);
+  const p = input.poll(0);
+  assert.equal(p.release, true);
+  assert.equal(p.pull, null);
 });
