@@ -1,8 +1,9 @@
-// Relay (TURN) settings for friends mode: fetched from Metered.ca with the game's key,
-// and never allowed to break joining when the relay can't be reached.
+// Relay (TURN) settings for friends mode: the game asks its own server (/api/turn) for the
+// relay servers, and a missing or broken answer never breaks joining.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { relayUrl, cleanIceServers, rtcConfig, hasRelay, STUN } from '../src/relay.js';
+import { readFileSync } from 'node:fs';
+import { cleanIceServers, rtcConfig, hasRelay, STUN, RELAY_ENDPOINT } from '../src/relay.js';
 
 const METERED = [
   { urls: 'stun:stun.relay.metered.ca:80' },
@@ -11,12 +12,10 @@ const METERED = [
 ];
 const okFetch = (body, seen = []) => async (url) => { seen.push(url); return { ok: true, json: async () => body }; };
 
-test('relayUrl builds the Metered credentials address, or null without a full key', () => {
-  assert.equal(relayUrl({ app: 'rubber-rumble', apiKey: 'k 1/2' }),
-    'https://rubber-rumble.metered.live/api/v1/turn/credentials?apiKey=k%201%2F2');
-  assert.equal(relayUrl({ app: '', apiKey: 'k' }), null);
-  assert.equal(relayUrl({ app: 'x', apiKey: '' }), null);
-  assert.equal(relayUrl({ app: 'evil.com/x?', apiKey: 'k' }), null, 'app must be a plain subdomain name');
+test('no Metered key or address is in the game code', () => {
+  const src = readFileSync(new URL('../src/relay.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /metered\.live|apiKey\s*[:=]\s*['"][0-9a-f]{20,}/i);
+  assert.equal(RELAY_ENDPOINT, '/api/turn');
 });
 
 test('cleanIceServers keeps only stun/turn entries with string fields', () => {
@@ -32,36 +31,34 @@ test('cleanIceServers keeps only stun/turn entries with string fields', () => {
   assert.equal(cleanIceServers(Array.from({ length: 20 }, () => METERED[1])).length, 8);
 });
 
-test('with a key, rtcConfig adds the relay servers after Google STUN', async () => {
+test('rtcConfig adds the server\'s relay servers after Google STUN', async () => {
   const seen = [];
-  const cfg = await rtcConfig({ relay: { app: 'rr', apiKey: 'key' }, fetch: okFetch(METERED, seen) });
+  const cfg = await rtcConfig({ fetch: okFetch({ iceServers: METERED }, seen) });
+  assert.deepEqual(seen, ['/api/turn']);
   assert.deepEqual(cfg.iceServers, [...STUN, ...METERED]);
   assert.equal(cfg.iceTransportPolicy, undefined);
-  assert.equal(seen.length, 1);
   assert.equal(hasRelay(cfg), true);
 });
 
-test('without a key, rtcConfig is STUN only and fetches nothing', async () => {
-  const seen = [];
-  const cfg = await rtcConfig({ relay: { app: '', apiKey: '' }, fetch: okFetch(METERED, seen) });
+test('an empty answer (no relay set up) is STUN only', async () => {
+  const cfg = await rtcConfig({ fetch: okFetch({ iceServers: [] }) });
   assert.deepEqual(cfg.iceServers, STUN);
-  assert.equal(seen.length, 0);
   assert.equal(hasRelay(cfg), false);
 });
 
-test('a failing, slow or odd relay answer falls back to STUN only', async () => {
-  const relay = { app: 'rr', apiKey: 'key' };
+test('a failing, slow or odd answer falls back to STUN only', async () => {
   const down = async () => { throw new Error('offline'); };
-  const bad = async () => ({ ok: false, status: 401, json: async () => ({ error: 'bad key' }) });
+  const bad = async () => ({ ok: false, status: 404, json: async () => ({}) });
   const junk = okFetch({ error: 'nope' });
+  const html = async () => ({ ok: true, json: async () => { throw new SyntaxError('not json'); } });
   const slow = () => new Promise(() => {});
-  for (const fetch of [down, bad, junk, slow]) {
-    const cfg = await rtcConfig({ relay, fetch, timeout: 30 });
+  for (const fetch of [down, bad, junk, html, slow]) {
+    const cfg = await rtcConfig({ fetch, timeout: 30 });
     assert.deepEqual(cfg.iceServers, STUN);
   }
 });
 
 test('relayOnly forces every connection through the relay (for testing)', async () => {
-  const cfg = await rtcConfig({ relay: { app: 'rr', apiKey: 'key' }, fetch: okFetch(METERED), relayOnly: true });
+  const cfg = await rtcConfig({ fetch: okFetch({ iceServers: METERED }), relayOnly: true });
   assert.equal(cfg.iceTransportPolicy, 'relay');
 });
