@@ -15,7 +15,7 @@ export const CONST = {
   DRIFT: 0.5,
   STEER_COST: 0.01,
   RESTITUTION: 0.8,
-  HIT_DAMAGE: 50,
+  HIT_DAMAGE: 42,
   ATK_BASE: 4, // damage ratio = (ATK_BASE + attack) / (ATK_BASE + defense)
   HIT_LUCK: 0.25,
   MASS_K: 0.3, // damage × (2·m_hitter/(m_a+m_b))^MASS_K // each hit's damage varies ±25%
@@ -27,6 +27,11 @@ export const CONST = {
 };
 
 const KINDS = ['dash', 'plant', 'secondWind', 'recentre'];
+
+// Spin Clash: tops grinding together lock up; both players mash, the winner steals spin.
+export const CLASH = { contact: 0.45, duration: 2.0, cooldown: 10, minHealth: 0.25, steal: 0.12, gain: 0.06 };
+const SPIN_OPPOSITE = 1.25; // opposite spins hit harder...
+const SPIN_SAME = 0.9;      // ...matching spins grind more softly
 const CRUMB = { every: 0.22, life: 6, r: 0.085, drag: 3.2, duration: 4 };
 
 // 1 at stat 5, smaller for higher stats; k sets how much stats matter.
@@ -39,6 +44,7 @@ export function createWorld(specs, launches, rng = Math.random, opts = {}) {
       spec,
       x: l.x, y: l.y, vx: 0, vy: 0,
       rpm: l.rpm, wobble: l.wobble, angle: 0,
+      spinDir: l.spinDir === -1 ? -1 : 1,
       leadSnapped: false,
       specialKind: opts.abilities?.[i] || (spec.special === 'wild' ? KINDS[Math.min(3, Math.floor(rng() * 4))] : spec.special),
       specialUsed: false,
@@ -61,6 +67,8 @@ export function createWorld(specs, launches, rng = Math.random, opts = {}) {
     zones: (opts.arena?.zones || []).map((z) => ({ ...z, owner: -1, until: Infinity })),
     bumpers: (opts.arena?.bumpers || []).map((b) => ({ ...b })),
     arena: opts.arena || null,
+    clashOn: opts.clash !== false,
+    clash: null, contact: 0, nextClash: 0,
   };
 }
 
@@ -118,7 +126,7 @@ function moveTop(w, t, intent, dt, opp) {
     t.wobble = Math.max(0, t.wobble - CONST.WOBBLE_RECOVER * (s.stability / 10) * dt);
   }
   t.rpm = Math.max(0, t.rpm);
-  t.angle += t.rpm * dt * 0.02;
+  t.angle += t.rpm * dt * 0.02 * t.spinDir;
 }
 
 function useSpecial(w, t, i) {
@@ -215,8 +223,9 @@ function collide(w) {
   // heavier tops hit harder and shrug off light ones
   const heavyA = ((2 * a.spec.mass) / (a.spec.mass + b.spec.mass)) ** CONST.MASS_K;
   const heavyB = ((2 * b.spec.mass) / (a.spec.mass + b.spec.mass)) ** CONST.MASS_K;
-  const dmgA = hitDamage(a, b, impact) * (0.5 + (1 - shareA)) * heavyB * luck();
-  const dmgB = hitDamage(b, a, impact) * (0.5 + shareA) * heavyA * luck();
+  const spinK = a.spinDir !== b.spinDir ? SPIN_OPPOSITE : SPIN_SAME;
+  const dmgA = hitDamage(a, b, impact) * (0.5 + (1 - shareA)) * heavyB * luck() * spinK;
+  const dmgB = hitDamage(b, a, impact) * (0.5 + shareA) * heavyA * luck() * spinK;
   a.dashArmed = false;
   b.dashArmed = false;
   a.rpm = Math.max(0, a.rpm - dmgA);
@@ -277,6 +286,40 @@ function bounceOffBumpers(w) {
   });
 }
 
+// track how long the tops have been pressed together; long enough starts a clash
+function watchForClash(w) {
+  if (!w.clashOn || w.over) return;
+  const [a, b] = w.tops;
+  const close = Math.hypot(b.x - a.x, b.y - a.y) < (a.spec.radius + b.spec.radius) * 1.12;
+  w.contact = close ? w.contact + CONST.DT : Math.max(0, w.contact - CONST.DT * 2);
+  const healthy = w.tops.every((t) => t.rpm >= CLASH.minHealth * t.spec.maxRPM);
+  if (w.contact >= CLASH.contact && w.time >= w.nextClash && healthy) {
+    w.clash = { t: 0, mash: [0, 0], x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    for (const t of w.tops) { t.vx = 0; t.vy = 0; }
+    w.events.push({ type: 'clashStart', x: w.clash.x, y: w.clash.y });
+  }
+}
+
+function runClash(w, intents) {
+  const c = w.clash;
+  c.t += CONST.DT;
+  intents?.forEach((it, i) => { c.mash[i] += it?.mash || 0; });
+  if (c.t < CLASH.duration) return;
+  const [m0, m1] = c.mash;
+  const winner = m0 !== m1 ? (m0 > m1 ? 0 : 1) : (w.tops[0].rpm >= w.tops[1].rpm ? 0 : 1);
+  const win = w.tops[winner], lose = w.tops[1 - winner];
+  lose.rpm = Math.max(1, lose.rpm - CLASH.steal * lose.spec.maxRPM);
+  win.rpm = Math.min(win.spec.maxRPM, win.rpm + CLASH.gain * win.spec.maxRPM);
+  lose.wobble += 0.12;
+  const dx = lose.x - win.x, dy = lose.y - win.y, d = Math.hypot(dx, dy) || 1;
+  lose.vx = (dx / d) * 1.3; lose.vy = (dy / d) * 1.3;
+  win.vx = -(dx / d) * 0.3; win.vy = -(dy / d) * 0.3;
+  w.clash = null;
+  w.contact = 0;
+  w.nextClash = w.time + CLASH.cooldown;
+  w.events.push({ type: 'clashEnd', winner, mash: [m0, m1] });
+}
+
 function lossReason(t) {
   if (t.crumbled) return 'snapko';
   if (t.rpm <= 0) return 'stopped';
@@ -293,12 +336,14 @@ function endRound(w, result) {
 
 export function step(w, intents) {
   if (w.over) return;
+  if (w.clash) { runClash(w, intents); return; } // the world holds still while the clash plays out
   const dt = CONST.DT;
   const pre = w.tops.map((t) => t.rpm);
   applySpecials(w, intents, dt);
   w.tops.forEach((t, i) => moveTop(w, t, intents?.[i], dt, w.tops[1 - i]));
   collide(w);
   if (w.bumpers.length) bounceOffBumpers(w);
+  watchForClash(w);
   w.time += dt;
 
   const reasons = w.tops.map(lossReason);
@@ -322,10 +367,15 @@ export function simulate(w, elapsed, intents) {
   const n = Math.floor(e / CONST.DT + 1e-9);
   // a special pressed on a frame too short for a step waits for the next step
   w.pendingSpecial ??= [false, false];
-  intents?.forEach((it, i) => { if (it?.special) w.pendingSpecial[i] = true; });
+  w.pendingMash ??= [0, 0];
+  intents?.forEach((it, i) => {
+    if (it?.special) w.pendingSpecial[i] = true;
+    w.pendingMash[i] += it?.mash || 0; // taps count once, however many steps the frame runs
+  });
   for (let i = 0; i < n; i++) {
-    const withSpecial = [0, 1].map((k) => ({ steer: intents?.[k]?.steer || { x: 0, y: 0 }, special: w.pendingSpecial[k] }));
+    const withSpecial = [0, 1].map((k) => ({ steer: intents?.[k]?.steer || { x: 0, y: 0 }, special: w.pendingSpecial[k], mash: w.pendingMash[k] }));
     w.pendingSpecial = [false, false];
+    w.pendingMash = [0, 0];
     step(w, withSpecial);
   }
   return e - n * CONST.DT;

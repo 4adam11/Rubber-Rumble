@@ -44,6 +44,7 @@ export function cpuLaunch(spec, difficulty, side, rng = Math.random) {
     rpm: spec.maxRPM * frac * (perfect ? 1.05 : 1),
     wobble: perfect ? 0 : 0.1 + 0.3 * rng(),
     perfect,
+    spinDir: rng() < 0.5 ? -1 : 1,
   };
 }
 
@@ -106,12 +107,21 @@ function decide(world, index) {
   return { steer, special: wantsSpecial(me, opp, world) };
 }
 
+const MASH_RATE = { easy: 4, medium: 6, hard: 8 }; // taps per second in a spin clash
+
 export function createCpu(difficulty, index, rng = Math.random) {
   const reaction = DIFFICULTY[difficulty].reaction;
+  let mashAcc = 0;
   let timer = reaction;
   let intent = { steer: { x: 0, y: 0 }, special: false };
   return {
     think(world, dt) {
+      if (world.clash) {
+        mashAcc += MASH_RATE[difficulty] * dt * (0.8 + 0.4 * rng());
+        const taps = Math.floor(mashAcc);
+        mashAcc -= taps;
+        return { steer: { x: 0, y: 0 }, special: false, mash: taps };
+      }
       timer += dt;
       if (timer >= reaction) {
         timer = rng() * reaction * 0.2; // small jitter so CPUs don't act in lockstep

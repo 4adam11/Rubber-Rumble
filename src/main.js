@@ -152,7 +152,7 @@ function stepLaunch(dt) {
     if (inp.placeAngle !== null) setPlace(s, inp.placeAngle);
     const before = s.rpm;
     for (const k of inp.keyStrokes) keyStroke(s, k);
-    for (const v of inp.strokes) addStroke(s, v);
+    for (const v of inp.strokes) addStroke(s, Math.abs(v), Math.sign(v));
     if (s.rpm > before) { audio.stroke(); buzz(8); }
     if (inp.release) release(s);
     const was = s.phase;
@@ -192,7 +192,7 @@ function stepBattle(dt) {
     const intents = [0, 1].map((i) => {
       if (isCpu(i)) return g.cpus[i].think(w, dt);
       const inp = input.poll(i);
-      return { steer: inp.steer, special: inp.special };
+      return { steer: inp.steer, special: inp.special, mash: inp.taps };
     });
     g.acc = simulate(w, g.acc + dt, intents);
   }
@@ -202,6 +202,8 @@ function stepBattle(dt) {
       if (e.type === 'hit') { audio.clack(e.impact); if (e.impact > 0.8) buzz(15); }
       else if (e.type === 'snap') { audio.snap(); buzz([60, 40, 90]); }
       else if (e.type === 'crumble') { audio.snap(); audio.clack(2); buzz([90, 50, 140]); }
+      else if (e.type === 'clashStart') { audio.clack(2); buzz([40, 30, 40, 30, 40]); }
+      else if (e.type === 'clashEnd') { audio.special(); buzz(60); }
       else if (e.type === 'special') { audio.special(); buzz(25); }
       else if (e.type === 'unlock') { audio.perfect(); if (!isCpu(e.i)) buzz([30, 40, 30]); }
       else if (e.type === 'block' || e.type === 'bump') audio.clack(1);
@@ -456,8 +458,8 @@ function hints(i) {
     return coarse ? `Drag to place · ${left}s` : `${keys[0]}/${keys[1]} to place · ${left}s`;
   }
   if (s.phase === 'twist') {
-    if (coarse) return 'Flick 2 thumbs up & down!';
-    if (game.config.mode === 'cpu') return `Mash ${keys[0]}↔${keys[1]} (or circle the mouse) · ${keys[2]} to let go`;
+    if (coarse) return 'Flick 2 thumbs! First flick sets the spin';
+    if (game.config.mode === 'cpu') return `Mash ${keys[0]}↔${keys[1]} · start on ${keys[1]} for ↻, ${keys[0]} for ↺ · ${keys[2]} to let go`;
     return `Mash ${keys[0]}↔${keys[1]}! ${keys[2]} to let go`;
   }
   return s.result?.perfect ? 'PERFECT!' : 'Released';
@@ -490,6 +492,7 @@ function frameData() {
   return {
     hudData: hudData(),
     launchLabels: game.phase === 'launch' ? [0, 1].map(hints) : null,
+    clashHint: coarse ? 'SPIN CLASH! TAP TAP TAP!' : game.config.mode === '2p' ? 'MASH!  P1: A/D   P2: ←/→' : 'MASH A / D!',
     touchGuide: coarse && game.phase === 'launch' ? humans : null,
     overlay: drawTouchControls,
   };

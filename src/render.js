@@ -6,6 +6,7 @@ import { paintDesk, paintArena, drawCrumbs } from './arena-art.js';
 import { createHud } from './hud.js';
 import { drawIntro as paintIntro } from './intro.js';
 import { ABILITIES } from './abilities.js';
+import { CLASH } from './physics.js';
 
 export { computeLayout, arenaToScreen, screenToArenaVec };
 
@@ -168,6 +169,22 @@ export function createRenderer(canvas) {
           cam.target = 1.18; cam.fx = p.x; cam.fy = p.y; cam.hold = 0.55;
         }
         slowmo(0.3, 0.6);
+      } else if (e.type === 'clashStart') {
+        const p = arenaToScreen(L, e.x, e.y);
+        sparks(p.x, p.y, 24, '#ffe7a3');
+        wave(p.x, p.y, 10, 120, 0.5, '#ffd23f', 6);
+        flash = Math.max(flash, 0.3);
+        if (!reducedMotion()) shake = Math.max(shake, 8);
+        banner('SPIN CLASH!', { color: '#d97706', size: 72, life: 1.2 });
+      } else if (e.type === 'clashEnd') {
+        const w0 = topScreen(world, e.winner), l0 = topScreen(world, 1 - e.winner);
+        for (let k = 0; k < 22; k++) { // spin flies from the loser to the winner
+          const f = k / 22;
+          particles.push({ kind: 'spark', x: l0.x + (w0.x - l0.x) * f * 0.3, y: l0.y + (w0.y - l0.y) * f * 0.3,
+            vx: (w0.x - l0.x) * rand(1.6, 2.6), vy: (w0.y - l0.y) * rand(1.6, 2.6), life: rand(0.3, 0.5), rot: Math.atan2(w0.y - l0.y, w0.x - l0.x), vr: 0, size: rand(8, 16), color: PLAYER_COLORS[e.winner], drag: 2 });
+        }
+        wave(w0.x, w0.y, 10, 80, 0.5, PLAYER_COLORS[e.winner], 5);
+        banner('CLASH WON! +spin', { x: w0.x, y: w0.y - 60, color: PLAYER_COLORS[e.winner], size: 28, life: 1.3 });
       } else if (e.type === 'crumble') {
         // Snap KO: the eraser breaks apart into crumbs
         const p = topScreen(world, e.i);
@@ -548,8 +565,61 @@ export function createRenderer(canvas) {
     world.tops.forEach((t, i) => drawTrail(i, t));
     drawWaves();
     world.tops.forEach((t, i) => drawTop(t, i, { time: world.time }));
+    if (world.clash) {
+      const p = arenaToScreen(L, world.clash.x, world.clash.y);
+      if (Math.random() < 0.8) sparks(p.x, p.y, 2, Math.random() < 0.5 ? '#ffe7a3' : '#ffffff');
+      const g = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, 60);
+      g.addColorStop(0, 'rgba(255,230,140,0.7)');
+      g.addColorStop(1, 'rgba(255,230,140,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 60, 0, Math.PI * 2);
+      ctx.fill();
+      if (!reducedMotion()) shake = Math.max(shake, 2.5);
+    }
     drawParticles();
     overlays(frame);
+    if (world.clash) drawClashMeter(world.clash, frame);
+  }
+
+  // tug-of-war bar: whoever mashes more pushes it toward the other side
+  function drawClashMeter(c, frame) {
+    const W = L.width, H = L.height;
+    const bw = Math.min(460, W - 48), bh = 26;
+    const x = (W - bw) / 2, y = L.rotate ? H / 2 - bh / 2 : H - 92;
+    const share = (c.mash[0] + 1) / (c.mash[0] + c.mash[1] + 2);
+    ctx.save();
+    ctx.fillStyle = '#161616';
+    ctx.fillRect(x - 4, y - 4, bw + 8, bh + 8);
+    ctx.fillStyle = PLAYER_COLORS[0];
+    ctx.fillRect(x, y, bw * share, bh);
+    ctx.fillStyle = PLAYER_COLORS[1];
+    ctx.fillRect(x + bw * share, y, bw * (1 - share), bh);
+    ctx.fillStyle = '#ffd23f';
+    ctx.fillRect(x + bw * share - 3, y - 6, 6, bh + 12);
+    const left = Math.max(0, 1 - c.t / CLASH.duration);
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillRect(x, y + bh + 6, bw * left, 4);
+    ctx.font = `800 ${W < 420 ? 20 : 24}px ${HAND}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = '#161616';
+    const pulse = 1 + 0.06 * Math.sin(clock * 20);
+    ctx.translate(W / 2, y - 22);
+    ctx.scale(pulse, pulse);
+    const hint = frame?.clashHint || 'MASH!';
+    ctx.strokeText(hint, 0, 0);
+    ctx.fillStyle = '#ffd23f';
+    ctx.fillText(hint, 0, 0);
+    ctx.restore();
+    ctx.font = `800 18px ${HAND}`;
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'left';
+    ctx.fillText(String(c.mash[0]), x + 8, y + bh / 2 + 1);
+    ctx.textAlign = 'right';
+    ctx.fillText(String(c.mash[1]), x + bw - 8, y + bh / 2 + 1);
   }
 
   function thumbsGuide(p, i, rpx) {
@@ -623,6 +693,17 @@ export function createRenderer(canvas) {
         ctx.stroke();
         ctx.lineCap = 'butt';
         if (frame?.touchGuide?.[i]) thumbsGuide(p, i, rpx);
+        if (s.spinDir) {
+          ctx.font = `900 ${Math.max(18, rpx * 0.9)}px system-ui, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = '#fff';
+          const ax = p.x + rpx * 2.1, ay = p.y - rpx * 1.6;
+          ctx.strokeText(s.spinDir > 0 ? '↻' : '↺', ax, ay);
+          ctx.fillStyle = PLAYER_COLORS[i];
+          ctx.fillText(s.spinDir > 0 ? '↻' : '↺', ax, ay);
+        }
       }
       const label = frame?.launchLabels?.[i];
       if (label) {

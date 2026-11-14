@@ -53,7 +53,7 @@ export function createInput(target, getLayout, opts = {}) {
   let phase = 'menu';
   const held = new Set();
   const tracker = createTouchTracker();
-  const fresh = () => ({ keyStrokes: [], strokes: [], release: false, special: false, placeAngle: null });
+  const fresh = () => ({ keyStrokes: [], strokes: [], release: false, special: false, placeAngle: null, taps: 0 });
   let edge = [fresh(), fresh()];
   const pair = [createPairStrokeDetector(), createPairStrokeDetector()];
   const circle = [createCircleStrokeDetector(), createCircleStrokeDetector()];
@@ -78,6 +78,8 @@ export function createInput(target, getLayout, opts = {}) {
           if (e.code === k.release) edge[p].release = true;
         } else if (phase === 'battle' && e.code === k.special) {
           edge[p].special = true;
+        } else if (phase === 'battle' && [k.left, k.right, k.up, k.down].includes(e.code)) {
+          edge[p].taps++; // mash for spin clashes
         }
       }
     }
@@ -98,6 +100,7 @@ export function createInput(target, getLayout, opts = {}) {
     for (const t of e.changedTouches) {
       const p = playerForPoint(t.clientX, t.clientY, L.width, L.height, players);
       if (phase === 'battle' && insideButton(p, t.clientX, t.clientY)) { edge[p].special = true; continue; }
+      if (phase === 'battle') edge[p].taps++;
       if (tracker.down(t.identifier, t.clientX, t.clientY, p)) {
         if (tracker.touchesFor(p).length === 2) pair[p].reset();
         circle[p].reset();
@@ -117,7 +120,7 @@ export function createInput(target, getLayout, opts = {}) {
         const [a, b] = ts;
         const side = Math.abs(a.x - b.x) >= Math.abs(a.y - b.y);
         const s = side ? pair[p].update(a.y, b.y, tNow) : pair[p].update(a.x, b.x, tNow);
-        if (s > 0) edge[p].strokes.push(s);
+        if (s > 0) edge[p].strokes.push(s * (pair[p].sign || 1));
       } else if (ts.length === 1) {
         feedSingle(p, ts[0].x, ts[0].y);
       }
@@ -143,7 +146,7 @@ export function createInput(target, getLayout, opts = {}) {
     const c = anchor(p);
     if (c) {
       const s = circle[p].update(Math.atan2(y - c.y, x - c.x));
-      if (s > 0) edge[p].strokes.push(s);
+      if (s > 0) edge[p].strokes.push(s * (circle[p].sign || 1));
     }
   }
 
@@ -151,6 +154,7 @@ export function createInput(target, getLayout, opts = {}) {
     if (phase === 'menu' || players !== 1) return;
     if (e.button === 2) { if (phase === 'battle') edge[0].special = true; return; }
     mouse = { x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY };
+    if (phase === 'battle') edge[0].taps++;
     circle[0].reset();
     if (phase === 'launch') feedSingle(0, e.clientX, e.clientY);
   }
@@ -236,6 +240,7 @@ export function createInput(target, getLayout, opts = {}) {
         release: e.release,
         steer: phase === 'battle' ? steerFor(p) : { x: 0, y: 0 },
         special: e.special,
+        taps: e.taps,
         touching: tracker.touchesFor(p).length > 0 || (p === 0 && !!mouse),
       };
     },

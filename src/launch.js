@@ -20,6 +20,7 @@ export function createLaunch(spec, side) {
   return {
     spec, side, phase: 'place', t: 0,
     rimAngle: homeAngle(side), rpm: 0, lastKey: null, result: null,
+    spinDir: 0, // set by the first flick: 1 clockwise, -1 anticlockwise
   };
 }
 
@@ -37,8 +38,9 @@ export function setPlace(state, angle) {
   setOffset(state, wrap(angle - homeAngle(state.side)));
 }
 
-export function addStroke(state, strength) {
+export function addStroke(state, strength, dir = 0) {
   if (state.phase !== 'twist' || !(strength > 0)) return;
+  if (!state.spinDir && dir) state.spinDir = Math.sign(dir);
   const max = state.spec.maxRPM;
   const gain = (max / LAUNCH.STROKES_TO_MAX) * strength * (state.rpm > 0.8 * max ? 0.5 : 1);
   state.rpm = Math.min(max, state.rpm + gain);
@@ -46,7 +48,7 @@ export function addStroke(state, strength) {
 
 export function keyStroke(state, key) {
   if (state.phase !== 'twist') return;
-  if (key !== state.lastKey) addStroke(state, 1);
+  if (key !== state.lastKey) addStroke(state, 1, key === 'L' ? -1 : 1);
   state.lastKey = key;
 }
 
@@ -64,6 +66,7 @@ function finish(state, ring) {
     rpm: perfect ? state.rpm * 1.05 : state.rpm,
     wobble: perfect ? 0 : 0.1 + 0.3 * ring,
     perfect,
+    spinDir: state.spinDir || 1,
   };
 }
 
@@ -102,12 +105,13 @@ export function createPairStrokeDetector() {
       return 0;
     },
     reset() { anchor = null; lastSign = 0; },
+    get sign() { return lastSign; }, // direction of the latest flick
   };
 }
 
 // Circular mouse drag around the top: every half turn is one stroke.
 export function createCircleStrokeDetector() {
-  let last = null, acc = 0;
+  let last = null, acc = 0, lastDir = 1;
   return {
     update(angle) {
       if (last === null) { last = angle; return 0; }
@@ -116,11 +120,13 @@ export function createCircleStrokeDetector() {
       if (Math.sign(d) !== Math.sign(acc) && acc !== 0) acc = 0;
       acc += d;
       if (Math.abs(acc) >= Math.PI) {
+        lastDir = Math.sign(acc);
         acc -= Math.sign(acc) * Math.PI;
         return 1;
       }
       return 0;
     },
     reset() { last = null; acc = 0; },
+    get sign() { return lastDir; },
   };
 }
