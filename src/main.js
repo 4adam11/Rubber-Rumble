@@ -14,6 +14,7 @@ import { loadSettings, saveSettings } from './settings.js';
 import { ABILITIES, ABILITY_IDS, UNLOCK_AT } from './abilities.js';
 import { ARENAS, ARENA_IDS } from './arenas.js';
 import { INTRO_SECONDS } from './intro.js';
+import { lineFor } from './announcer.js';
 
 const canvas = document.getElementById('game');
 const renderer = createRenderer(canvas);
@@ -126,11 +127,20 @@ function startRound() {
   input.setPhase('launch');
   ui.show('hud');
   const done = g.match.state().rounds;
-  renderer.banner(roundLabel(done, done.length), { sub: coarse ? 'Drag your top to a spot on the rim' : 'Place your top on the rim', size: 54, life: 1.3 });
+  const label = roundLabel(done, done.length);
+  renderer.banner(label, { sub: coarse ? 'Drag your top to a spot on the rim' : 'Place your top on the rim', size: 54, life: 1.3 });
+  g.taken = [0, 0]; // damage taken this round, for Flawless
+  g.saidTwist = false;
+  audio.boom();
+  audio.say(lineFor('round', { label }));
 }
 
 function stepLaunch(dt) {
   const g = game;
+  if (!g.saidTwist && !isDemo() && g.launches.some((s) => s.phase === 'twist')) {
+    g.saidTwist = true;
+    audio.say(lineFor('twist'), { rate: 1.1 });
+  }
   g.launches.forEach((s, i) => {
     if (isCpu(i)) {
       const plan = g.cpuPlans[i];
@@ -182,6 +192,8 @@ function startBattle() {
   input.setPhase('battle');
   renderer.banner('GHUMAO!', { sub: 'Spin it!', size: 70, life: 1.1 });
   audio.go();
+  audio.boom();
+  audio.say(lineFor('fight'), { rate: 1, pitch: 0.7 });
   buzz(30);
 }
 
@@ -200,15 +212,17 @@ function stepBattle(dt) {
     renderer.spawnFromEvents(w.events, w);
     for (const e of w.events) {
       if (e.type === 'hit') { audio.clack(e.impact); if (e.impact > 0.8) buzz(15); }
-      else if (e.type === 'snap') { audio.snap(); buzz([60, 40, 90]); }
-      else if (e.type === 'crumble') { audio.snap(); audio.clack(2); buzz([90, 50, 140]); }
-      else if (e.type === 'clashStart') { audio.clack(2); buzz([40, 30, 40, 30, 40]); }
-      else if (e.type === 'clashEnd') { audio.special(); buzz(60); }
+      else if (e.type === 'snap') { audio.snap(); buzz([60, 40, 90]); audio.say(lineFor('snap')); }
+      else if (e.type === 'damage') g.taken[e.i] += e.amount;
+      else if (e.type === 'crumble') { audio.crumble(); buzz([90, 50, 140]); }
+      else if (e.type === 'clashStart') { audio.clack(2); audio.grind(true); audio.say(lineFor('clash')); buzz([40, 30, 40, 30, 40]); }
+      else if (e.type === 'clashEnd') { audio.grind(false); audio.special(); buzz(60); }
       else if (e.type === 'special') { audio.special(); buzz(25); }
-      else if (e.type === 'unlock') { audio.perfect(); if (!isCpu(e.i)) buzz([30, 40, 30]); }
+      else if (e.type === 'unlock') { audio.perfect(); if (!isCpu(e.i)) { buzz([30, 40, 30]); audio.say(lineFor('unlock'), { rate: 1.1 }); } }
       else if (e.type === 'block' || e.type === 'bump') audio.clack(1);
     }
     w.tops.forEach((t, i) => audio.hum(i, w.over ? 0 : t.rpm / t.spec.maxRPM));
+    if (w.clash) audio.grind(true);
   } else {
     renderer.spawnFromEvents(w.events.filter((e) => e.type === 'hit'), w, true);
   }
@@ -254,8 +268,14 @@ function endRound(result) {
   input.setPhase('menu');
   audio.silence();
   g.match.record(result);
+  const flawless = result.winner !== null && (g.taken?.[result.winner] || 0) < 1;
+  g.lastFlawless = flawless;
+  audio.boom();
+  audio.say(lineFor('finish', { reason: result.winner === null ? 'draw' : result.reason, flawless }));
   if (result.winner === null) {
     renderer.banner('Draw!', { sub: describe(result), size: 64, life: 2 });
+  } else if (flawless) {
+    renderer.banner('FLAWLESS!', { sub: `${FINISH_NAMES[result.reason]} +${POINTS[result.reason] ?? 1} · ${playerName(result.winner)} took no damage`, color: PLAYER_COLORS[result.winner], size: 70, life: 2.2 });
   } else {
     const pts = POINTS[result.reason] ?? 1;
     renderer.banner(`${FINISH_NAMES[result.reason].toUpperCase()}! +${pts}`,
@@ -274,6 +294,7 @@ function showResult() {
       g.endSoundPlayed = true;
       const youLost = g.config.mode === 'cpu' && st.winner === 1;
       youLost ? audio.lose() : audio.win();
+      setTimeout(() => audio.say(lineFor('match', { name: names[st.winner] })), 500);
     }
     ui.show('match', {
       headline: g.config.mode === 'cpu' ? (st.winner === 0 ? 'You win the match!' : 'CPU wins the match') : `Player ${st.winner + 1} wins!`,
@@ -589,8 +610,11 @@ let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
-  tick(dt);
-  requestAnimationFrame(frame);
+  try {
+    tick(dt);
+  } finally {
+    requestAnimationFrame(frame); // one bad frame must never stop the game
+  }
 }
 requestAnimationFrame(frame);
 

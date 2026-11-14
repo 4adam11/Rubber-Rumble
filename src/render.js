@@ -59,6 +59,7 @@ export function createRenderer(canvas) {
   function resize() {
     dpr = Math.min(2, window.devicePixelRatio || 1);
     const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (!w || !h) return; // hidden or minimised: keep the last good size
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
     L = computeLayout(w, h);
@@ -231,7 +232,7 @@ export function createRenderer(canvas) {
       ctx.scale(cam.zoom, cam.zoom);
       ctx.translate(-cam.fx, -cam.fy);
     }
-    if (bg) ctx.drawImage(bg, 0, 0, L.width, L.height);
+    if (bg && bg.width && bg.height) ctx.drawImage(bg, 0, 0, L.width, L.height);
   }
 
   function endFrame() {
