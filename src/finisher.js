@@ -1,7 +1,7 @@
 // "FINISH IT!": after the match-winning round, the winner gets a few seconds to enter a short
 // sequence. Get it right and a Rubberality plays. Pure logic; drawing lives in render.js.
 
-export const FINISH_SECONDS = 4;
+export const FINISH_SECONDS = 6;
 
 export const FINISHERS = {
   sharpener: { name: 'Sharpener Shred', desc: 'A giant sharpener grinds the loser into shavings.' },

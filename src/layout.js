@@ -9,7 +9,13 @@ export const TOP_HUD = 84;      // space for the health bars when they run acros
 export const BOTTOM_PAD = 70;   // portrait: room for thumbs and the ability button
 export const SIDE_HUD = 210;    // width of a health-bar block beside the thali
 
-export function computeLayout(width, height) {
+// How far this device turns the bowl so its own seat starts nearest the player
+// (bottom on a phone, left on a laptop). Seat 0 needs no turn.
+export function viewFor(seat, seats = 2) {
+  return seat ? -(seat * 2 * Math.PI) / seats : 0;
+}
+
+export function computeLayout(width, height, view = 0) {
   const rotate = height > width;
   const availW = width - GUTTER * 2;
   let availH = height - GUTTER * 2;
@@ -21,10 +27,18 @@ export function computeLayout(width, height) {
   }
   const scale = Math.max(10, Math.min(availW, availH) / (2 * THALI_OUTER));
   const cy = hud === 'top' ? GUTTER + TOP_HUD + availH / 2 : height / 2;
-  return { width, height, rotate, hud, scale, cx: width / 2, cy };
+  return { width, height, rotate, hud, scale, cx: width / 2, cy, view };
 }
 
-export function arenaToScreen(L, x, y) {
+// turn an arena point by a; no-op (and exactly as before) when a is 0
+function turn(x, y, a) {
+  if (!a) return { x, y };
+  const c = Math.cos(a), s = Math.sin(a);
+  return { x: x * c - y * s, y: x * s + y * c };
+}
+
+export function arenaToScreen(L, ax, ay) {
+  const { x, y } = turn(ax, ay, L.view);
   return L.rotate
     ? { x: L.cx - y * L.scale, y: L.cy - x * L.scale }
     : { x: L.cx + x * L.scale, y: L.cy + y * L.scale };
@@ -35,7 +49,8 @@ export function screenToArena(L, sx, sy) {
 }
 
 export function screenToArenaVec(L, dx, dy) {
-  return L.rotate
+  const v = L.rotate
     ? { x: -dy / L.scale, y: -dx / L.scale }
     : { x: dx / L.scale, y: dy / L.scale };
+  return turn(v.x, v.y, -(L.view || 0));
 }

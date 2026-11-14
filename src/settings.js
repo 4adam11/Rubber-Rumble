@@ -16,8 +16,11 @@ export function defaultSettings() {
     lastArena: 'thali',
     tournament: { rung: 0, champion: false },
     wallet: newWallet(),
+    nickname: '',
   };
 }
+
+export const cleanNickname = (n) => (typeof n === 'string' ? n.trim().slice(0, 12).trim() : '');
 
 const validParts = (p) => p && ERASERS.some((e) => e.id === p.eraserId) && LEADS.some((l) => l.id === p.leadId);
 
@@ -36,6 +39,7 @@ export function loadSettings() {
         raw.lastAbility.slice(0, 2).forEach((a, i) => { if (ABILITY_IDS.includes(a)) s.lastAbility[i] = a; });
       }
       if (ARENA_IDS.includes(raw.lastArena)) s.lastArena = raw.lastArena;
+      s.nickname = cleanNickname(raw.nickname);
       const t = raw.tournament;
       if (t && Number.isInteger(t.rung) && t.rung >= 0 && t.rung < RUNGS.length) {
         s.tournament = { rung: t.rung, champion: !!t.champion };

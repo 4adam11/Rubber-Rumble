@@ -10,36 +10,45 @@ export const LAUNCH = {
   SLIDE_RANGE: Math.PI / 3,
   SLIDE_SPEED: 1.5,
   STROKE_PX: 30,
-  PAD_TWIST_TIME: 4.5, // phones: more time to pull, hold and charge on the twist pad
-  CHARGE_TIME: 2.2,    // seconds of a full pull to charge to 80% (the last 20% charges at half speed)
+  PAD_TWIST_TIME: 3.5, // phones: a little longer to pull, hold and charge on the twist pad
+  CHARGE_TIME: 1.65,   // seconds of a full pull to charge to 80% (the last 20% at half speed: full in ~2.5 s)
   PULL_MIN: 0.3,       // how far apart the grips must be before anything charges
   PULL_FULL: 0.85,     // pulled this far apart = charging at full speed
 };
 
 const TAU = Math.PI * 2;
 const wrap = (a) => ((((a + Math.PI) % TAU) + TAU) % TAU) - Math.PI; // [-π, π)
-const homeAngle = (side) => (side === 0 ? Math.PI : 0);
+// Where seat k of n starts on the rim: seat 0 on the left (π), the rest spaced evenly round.
+export function seatAngle(seat, seats = 2) {
+  const a = Math.PI + (seat * TAU) / seats;
+  return a >= TAU - 1e-9 ? a - TAU : a;
+}
 
-export function createLaunch(spec, side, { twistTime = LAUNCH.TWIST_TIME } = {}) {
+// how far a top may slide from its seat: neighbours' slots never overlap
+export const seatRange = (seats = 2) => (seats <= 2 ? LAUNCH.SLIDE_RANGE : Math.min(Math.PI / 3, Math.PI / seats - 0.1));
+
+export function createLaunch(spec, side, { twistTime = LAUNCH.TWIST_TIME, seats = 2 } = {}) {
+  const home = seatAngle(side, seats);
   return {
     spec, side, phase: 'place', t: 0, twistTime,
-    rimAngle: homeAngle(side), rpm: 0, lastKey: null, result: null,
+    home, range: seatRange(seats),
+    rimAngle: home, rpm: 0, lastKey: null, result: null,
     spinDir: 0, // set by the first flick: 1 clockwise, -1 anticlockwise
   };
 }
 
 function setOffset(state, diff) {
-  state.rimAngle = homeAngle(state.side) + Math.max(-LAUNCH.SLIDE_RANGE, Math.min(LAUNCH.SLIDE_RANGE, diff));
+  state.rimAngle = state.home + Math.max(-state.range, Math.min(state.range, diff));
 }
 
 export function slide(state, dir, dt) {
   if (state.phase !== 'place' || !dir) return;
-  setOffset(state, state.rimAngle - homeAngle(state.side) + dir * LAUNCH.SLIDE_SPEED * dt);
+  setOffset(state, state.rimAngle - state.home + dir * LAUNCH.SLIDE_SPEED * dt);
 }
 
 export function setPlace(state, angle) {
   if (state.phase !== 'place') return;
-  setOffset(state, wrap(angle - homeAngle(state.side)));
+  setOffset(state, wrap(angle - state.home));
 }
 
 export function addStroke(state, strength, dir = 0) {

@@ -2,7 +2,7 @@
 
 The school-desk game where you push a sharpened pencil lead into the back of an eraser and spin it like a top, now in the browser. Two tops battle in a steel thali. The last one spinning wins.
 
-- **Play vs Computer** (Easy / Medium / Hard) or **2 Players on one device**.
+- **Play vs Computer** (Easy / Medium / Hard), **2 Players on one device**, or **Play with Friends**: 2–4 players online, each on their own phone or laptop, joined with a room code.
 - Works on phones (touch, vibration, add-to-home-screen) and laptops (keyboard/mouse). No install, no account, no libraries.
 - **Live:** https://rubber-rumble.vercel.app
 
@@ -22,7 +22,7 @@ Tests (Node 18+):
 npm test
 ```
 
-Balance check (thousands of CPU-vs-CPU rounds, with abilities, across all arenas):
+Balance check (thousands of CPU-vs-CPU rounds, with abilities, across all arenas; `tools/ffa.mjs` does the same for 3–4 tops at once):
 
 ```bash
 node tools/balance.mjs 200 1 all   # rounds per matchup, seed, arena (thali|tiffin|geometry|all)
@@ -33,7 +33,7 @@ node tools/balance.mjs 200 1 all   # rounds per matchup, seed, arena (thali|tiff
 1. **Build a top**: pick an eraser (the body) and a pencil lead (the tip). The stat bars fill and empty as you swap parts.
 2. **Pick your comeback ability** (see below) and an **arena**.
 3. **Place** your top on your side of the rim.
-4. **Twist**: on a phone, put one thumb on each of the two grips stacked at the bottom of the screen, pull them apart (top grip one way, bottom grip the other) and **hold**: the spin charges while you hold, and phones get 4.5 s to charge. On a keyboard, mash your two keys one after the other.
+4. **Twist**: on a phone, put one thumb on each of the two grips stacked at the bottom of the screen, pull them apart (top grip one way, bottom grip the other) and **hold**: the spin charges while you hold, and phones get 3.5 s to charge. On a keyboard, mash your two keys one after the other.
 5. **Let go** when the ring around your top is tight for a **Perfect Release** (no wobble, +5% spin).
 6. **Battle**: your **health bar is your spin**. It drains over time and drops on every hit. Nudge your top around (costs a little health).
 7. At **30% health your ability unlocks**. Fire it once to turn the fight around.
@@ -56,8 +56,20 @@ Touch: drag to place, then pull the **twist pad** grips apart and hold to charge
 - **Points, first to 4** (Beyblade X style): Spin Finish 1 · Tip Finish 2 · Knock-Out 2 · **Snap KO 3** (a snapped lead takes a second big hit and the eraser crumbles). Winning a round without taking damage is a **Flawless**.
 - **Spin direction:** the way you first pull (top grip right = ↻, left = ↺) or first key sets the spin. Opposite spins hit harder.
 - **Spin Clash:** when the tops grind together they lock up; mash your keys (or tap) faster than your rival to steal their spin.
-- **FINISH IT!** After the match-winning round, enter the shown moves in time for a **Rubberality** (Sharpener Shred or Rub-Out).
+- **FINISH IT!** After the match-winning round, enter the shown moves within 6 seconds for a **Rubberality** (Sharpener Shred or Rub-Out).
 - **Announcer:** round calls, "Ghumao!", finish calls and Flawless, using your device's built-in voice.
+
+## Play with Friends (online, 2–4 players)
+
+1. One player taps **Play with Friends → Create a room** and gets a code like `RR-7K2Q` (Copy or Share it; a shared link fills the code in for your friends).
+2. Up to three friends tap **Join room** and type the code.
+3. In the lobby everyone taps **Pick my top**. The room creator picks the arena, can fill empty seats with computers (Easy / Medium / Hard), and taps **Start the battle** once 2+ players are in and ready.
+4. All the tops launch together; the last one spinning wins the round (points as usual, first to 4). Each screen turns the bowl so your own top starts nearest you.
+
+How it works: the room creator's device runs the battle and the others send their moves to it, directly between devices (WebRTC, using the free PeerJS service to find each other; no account or server). So:
+- keep the game open on the room creator's device during a match;
+- if a friend drops out, a computer takes over their top; if the room creator leaves, the room closes;
+- some school or office Wi-Fi blocks direct connections, so friends on those networks may not be able to join.
 
 ## School Tournament
 
@@ -125,13 +137,14 @@ Brand names are plain part names only. The erasers and pencils are drawn from sc
 |---|---|
 | `src/parts.js` | Erasers, leads, combos, `buildTop()` |
 | `src/abilities.js`, `src/arenas.js` | Comeback abilities and arena layouts |
-| `src/physics.js` | Bowl, health/spin drain, wobble, collisions, lead snap, abilities, slowing patches, bumpers (tuning in `CONST`) |
+| `src/physics.js` | Bowl, health/spin drain, wobble, collisions (every pair, 2–4 tops), lead snap, abilities, slowing patches, bumpers (tuning in `CONST`) |
 | `src/launch.js` | Twist-launch state machine and touch/mouse stroke detectors |
 | `src/ai.js` | Computer opponent: combo + ability picks, launches, steering |
 | `src/match.js` | Points scoring (first to 4) |
 | `src/finisher.js`, `src/announcer.js` | FINISH IT! sequences; announcer lines |
 | `src/tournament.js`, `src/economy.js` | School Tournament ladder; coins and the shop |
 | `src/input.js` | Touch / mouse / keyboard → per-player intents |
+| `src/room.js`, `src/net.js`, `src/online.js` | Friends rooms and codes; PeerJS connections + heartbeat; snapshots and smoothing |
 | `src/twistpad.js` | The phone twist pad: two stacked grips pulled apart and held to charge |
 | `src/layout.js` | Screen ↔ arena mapping and where the health bars go |
 | `src/render.js` | Tops, effects (trails, shockwaves, lead-snap slow-mo), launch, banners |

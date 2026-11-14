@@ -30,6 +30,7 @@ export function statChanges(prev, next) {
 const thumbCache = new Map();
 function thumb(key, w, h, draw) {
   if (thumbCache.has(key)) return thumbCache.get(key);
+  if (typeof document === 'undefined') return ''; // no canvas (tests): no picture
   const dpr = Math.min(2, (typeof devicePixelRatio === 'number' && devicePixelRatio) || 1);
   const c = document.createElement('canvas');
   c.width = Math.round(w * dpr);
@@ -81,6 +82,10 @@ export function createUI(root, handlers, opts = {}) {
     if (action === 'pick-ability' || action === 'pick-arena') { select(value); return; }
     if (action === 'howto-mode') { howto({ mode: value }); return; }
     if (action === 'ability-ready' || action === 'arena-ready') { handlers.action(action, choice.selected); return; }
+    if (action === 'create-room' || action === 'join-room') {
+      handlers.action(action, { name: root.querySelector('#nick')?.value ?? '', code: root.querySelector('#room-code')?.value ?? '' });
+      return;
+    }
     handlers.action(action, value);
   });
 
@@ -100,6 +105,7 @@ export function createUI(root, handlers, opts = {}) {
         <p class="tagline">Eraser top. Pencil-lead tip. One steel thali. Last one spinning wins.</p>
         <div class="stack">
           <button class="btn btn-primary" data-action="play-cpu">Play vs Computer</button>
+          <button class="btn btn-friends" data-action="friends">👫 Play with Friends <small>2–4 players · join with a code</small></button>
           <button class="btn btn-tourney" data-action="tournament">🏆 School Tournament</button>
           <button class="btn btn-shop" data-action="shop">🛍 Stationery Shop <span class="coin-chip">🪙 ${d.coins ?? 0}</span></button>
           <button class="btn" data-action="play-2p">2 Players · same device</button>
@@ -348,7 +354,7 @@ export function createUI(root, handlers, opts = {}) {
         </div>
         <div class="row sticky-row">
           <button class="btn btn-ghost" data-action="back">← Back</button>
-          <button class="btn btn-primary" data-action="arena-ready">Fight!</button>
+          <button class="btn btn-primary" data-action="arena-ready">${esc(d.label || 'Fight!')}</button>
         </div>
       </div>`, 'with-backdrop');
   }
@@ -428,11 +434,11 @@ export function createUI(root, handlers, opts = {}) {
       <div class="sheet sheet-small">
         <h2 style="color:${d.color}">${esc(d.headline)}</h2>
         <p class="sub">${esc(d.sub)}</p>
-        <p class="score">${esc(d.names[0])} <b>${d.wins[0]}</b> – <b>${d.wins[1]}</b> ${esc(d.names[1])}</p>
-        <div class="row">
-          <button class="btn btn-ghost" data-action="change-parts">Change parts</button>
+        ${scoreLine(d)}
+        ${d.waiting ? waitingRow() : `<div class="row">
+          ${d.online ? '<button class="btn btn-ghost" data-action="leave-room">Leave room</button>' : '<button class="btn btn-ghost" data-action="change-parts">Change parts</button>'}
           <button class="btn btn-primary" data-action="next-round" autofocus>${d.draw ? 'Replay round' : 'Next round'}</button>
-        </div>
+        </div>`}
       </div>`, 'bottom');
   }
 
@@ -442,19 +448,107 @@ export function createUI(root, handlers, opts = {}) {
         <p class="kicker">${esc(d.kicker || 'Match over')}</p>
         <h2 class="big" style="color:${d.color}">${esc(d.headline)}</h2>
         ${d.extra ? `<p class="sub extra">${esc(d.extra)}</p>` : ''}
-        <p class="score">${esc(d.names[0])} <b>${d.wins[0]}</b> – <b>${d.wins[1]}</b> ${esc(d.names[1])}</p>
+        ${scoreLine(d)}
         <ul class="rounds">${d.rounds.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
         ${d.coins ? `<div class="coins-earned"><b>🪙 +${d.coins.total} pocket money</b>${d.coins.lines.map((l) => `<span>${esc(l.label)} +${l.coins}</span>`).join('')}<small>You have ${d.coins.balance} coins</small></div>` : ''}
-        <div class="stack">
+        ${d.waiting ? waitingRow() : `<div class="stack">
           ${d.buttons ? d.buttons.map((b, k) => `<button class="btn ${b.primary ? 'btn-primary' : k === d.buttons.length - 1 ? 'btn-ghost' : ''}" data-action="${b.action}" ${b.primary ? 'autofocus' : ''}>${esc(b.label)}</button>`).join('') : `
           <button class="btn btn-primary" data-action="rematch" autofocus>Rematch</button>
           <button class="btn" data-action="change-parts">Change parts</button>
           <button class="btn btn-ghost" data-action="menu">Main menu</button>`}
+        </div>`}
+      </div>`, 'with-backdrop');
+  }
+
+  // 2 players: "A 2 – 1 B"; 3–4 players: everyone with their points, leader first
+  function scoreLine(d) {
+    if (d.names.length <= 2) return `<p class="score">${esc(d.names[0])} <b>${d.wins[0]}</b> – <b>${d.wins[1]}</b> ${esc(d.names[1])}</p>`;
+    const order = d.names.map((n, k) => k).sort((a, b) => d.wins[b] - d.wins[a]);
+    return `<ol class="score-list">${order.map((k) => `<li><span class="dot" style="background:${d.colors?.[k] || '#999'}"></span>${esc(d.names[k])} <b>${d.wins[k]}</b></li>`).join('')}</ol>`;
+  }
+
+  function waitingRow() {
+    return `<p class="waiting">⏳ Waiting for the host…</p>
+      <div class="row"><button class="btn btn-ghost" data-action="leave-room">Leave room</button></div>`;
+  }
+
+  // ---------- Play with Friends ----------
+  function friends(d) {
+    mount('friends', `
+      <div class="sheet sheet-small sheet-friends">
+        <h2>Play with Friends</h2>
+        <p class="sub">2–4 players, each on their own phone or laptop.</p>
+        <label class="field">Your name
+          <input id="nick" type="text" maxlength="12" autocomplete="nickname" value="${esc(d.name || '')}" placeholder="Nickname">
+        </label>
+        <button class="btn btn-primary" data-action="create-room" ${d.busy ? 'disabled' : ''}>Create a room</button>
+        <div class="or"><span>or join a friend</span></div>
+        <label class="field">Room code
+          <input id="room-code" type="text" maxlength="8" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="RR-XXXX" value="${esc(d.code || '')}">
+        </label>
+        <button class="btn" data-action="join-room" ${d.busy ? 'disabled' : ''}>Join room</button>
+        ${d.busy ? `<p class="status">${esc(d.busy)}</p>` : ''}
+        ${d.error ? `<p class="error" role="alert">${esc(d.error)}</p>` : ''}
+        <div class="row"><button class="btn btn-ghost" data-action="back">← Back</button></div>
+      </div>`, 'with-backdrop');
+  }
+
+  function lobby(d) {
+    const seats = d.seats || [];
+    const cards = seats.map((s, k) => `
+      <li class="seat ${s.you ? 'is-you' : ''}" style="--seat:${s.color}">
+        ${s.parts ? `<img src="${eraserThumb(s.parts.eraserId, s.skin)}" alt="" width="75" height="50">` : '<span class="seat-blank">?</span>'}
+        <div class="seat-info">
+          <b>${esc(s.name)}${s.you ? ' (you)' : ''}</b>
+          <small>${s.kind === 'cpu' ? `🤖 Computer · ${esc(s.difficulty || 'medium')}` : s.kind === 'host' ? '👑 Host' : 'Friend'}${s.ability ? ` · ${ABILITIES[s.ability]?.icon || ''} ${esc(ABILITIES[s.ability]?.name || '')}` : ''}</small>
+        </div>
+        <span class="seat-state">${s.kind === 'cpu' || s.ready ? '✅ Ready' : '✏️ Picking…'}</span>
+        ${d.host && k > 0 ? `<button class="seat-x" data-action="lobby-remove" data-value="${k}" aria-label="Remove ${esc(s.name)}">✕</button>` : ''}
+      </li>`).join('');
+    const empty = Array.from({ length: Math.max(0, 4 - seats.length) }, () => `
+      <li class="seat seat-empty"><span class="seat-blank">+</span><div class="seat-info"><b>Waiting for a friend…</b><small>Share the code</small></div></li>`).join('');
+    const me = seats.find((s) => s.you);
+    mount('lobby', `
+      <div class="sheet sheet-lobby">
+        <p class="kicker">Room code</p>
+        <div class="code-row">
+          <b class="room-code">RR-${esc(d.code)}</b>
+          <button class="btn btn-small" data-action="copy-code">📋 Copy</button>
+          <button class="btn btn-small" data-action="share-code">📤 Share</button>
+        </div>
+        ${d.note ? `<p class="status">${esc(d.note)}</p>` : ''}
+        <ol class="seats">${cards}${empty}</ol>
+        ${d.host && seats.length < 4 ? `<div class="cpu-row"><span>Add a computer:</span>
+          <button class="btn btn-small" data-action="lobby-cpu" data-value="easy">Easy</button>
+          <button class="btn btn-small" data-action="lobby-cpu" data-value="medium">Medium</button>
+          <button class="btn btn-small" data-action="lobby-cpu" data-value="hard">Hard</button></div>` : ''}
+        <p class="arena-line">Arena: <b>${esc(ARENAS[d.arena]?.name || 'Steel Thali')}</b>
+          ${d.host ? '<button class="btn btn-small" data-action="lobby-arena">Change</button>' : ''}</p>
+        <div class="stack">
+          <button class="btn ${me?.ready ? '' : 'btn-primary'}" data-action="lobby-pick">${me?.ready ? '✏️ Change my top' : '✏️ Pick my top'}</button>
+          ${d.host
+            ? `<button class="btn btn-primary" data-action="lobby-start" ${d.canStart ? '' : 'disabled'}>▶ Start the battle</button>
+               ${d.canStart ? '' : '<small class="hint">Needs 2+ players, everyone ready.</small>'}`
+            : '<p class="waiting">⏳ Waiting for the host to start…</p>'}
+          <button class="btn btn-ghost" data-action="leave-room">Leave room</button>
         </div>
       </div>`, 'with-backdrop');
   }
 
-  function pause() {
+  function pause(d = {}) {
+    if (d.online) {
+      mount('pause', `
+        <div class="sheet sheet-small">
+          <h2>Menu</h2>
+          <p class="sub">The battle keeps going while this is open.</p>
+          <div class="stack">
+            <button class="btn btn-primary" data-action="resume" autofocus>Back to the battle</button>
+            <button class="btn" data-action="toggle-sound-hud">${d.muted ? '🔇 Sound off' : '🔊 Sound on'}</button>
+            <button class="btn btn-ghost" data-action="leave-room">Leave room</button>
+          </div>
+        </div>`, 'with-backdrop');
+      return;
+    }
     mount('pause', `
       <div class="sheet sheet-small">
         <h2>Paused</h2>
@@ -491,6 +585,7 @@ export function createUI(root, handlers, opts = {}) {
           <li><b>Points, first to 4:</b> Spin Finish 1 · Tip Finish 2 · Knock-Out 2 · <b>Snap KO 3</b>. Win without taking damage for a <em>Flawless</em>.</li>
           <li><b>Spin Clash:</b> when the tops grind together, mash your keys (or tap) faster than your rival to steal their spin.</li>
           <li><b>FINISH IT!</b> Win the match and enter the moves in time for a <em>Rubberality</em>.</li>
+          <li><b>Play with Friends:</b> 2–4 players online with a room code. Last top spinning wins each round.</li>
           <li><b>Arenas:</b> the Steel Thali is smooth; the Tiffin Lid has sticky dal stains; the Geometry Box has ink blots, shavings and a sharpener in the way.</li>
           <li><b>School Tournament:</b> beat five classmates, each with a twist, and then the Principal. <b>Stationery Shop:</b> spend your pocket money on sleeves and pencil paints.</li>
         </ul>
@@ -542,7 +637,7 @@ export function createUI(root, handlers, opts = {}) {
   return {
     show(name, data = {}) {
       if (name === 'picker') { picker = { ...data }; renderPicker(); return; }
-      ({ title, difficulty, round: roundResult, match: matchResult, pause, howto, hud, ability: abilityScreen, arena: arenaScreen, intro: introScreen, ladder, shop })[name](data);
+      ({ title, difficulty, round: roundResult, match: matchResult, pause, howto, hud, ability: abilityScreen, arena: arenaScreen, intro: introScreen, ladder, shop, friends, lobby })[name](data);
     },
     hide() { current = null; root.innerHTML = ''; },
     get current() { return current; },

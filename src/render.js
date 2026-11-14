@@ -11,7 +11,7 @@ import { CLASH } from './physics.js';
 
 export { computeLayout, arenaToScreen, screenToArenaVec };
 
-export const PLAYER_COLORS = ['#2f5fd0', '#d8432f'];
+export const PLAYER_COLORS = ['#2f5fd0', '#d8432f', '#2e9e4f', '#e0a020']; // blue, red, green, amber
 const HAND = '"Kalam", "Comic Sans MS", cursive';
 const PAINT = ['#d43c2f', '#f2c230', '#2b2b2b', '#2f8f4e', '#2f5fd0'];
 
@@ -28,7 +28,8 @@ function shade(hex, amt) {
 
 export function createRenderer(canvas) {
   const ctx = canvas.getContext('2d');
-  let L = computeLayout(canvas.clientWidth || 800, canvas.clientHeight || 600);
+  let view = 0; // how far this device turns the bowl (friends mode: own seat nearest the player)
+  let L = computeLayout(canvas.clientWidth || 800, canvas.clientHeight || 600, view);
   let dpr = 1;
   let bg = null;
   let arenaId = 'thali';
@@ -39,13 +40,13 @@ export function createRenderer(canvas) {
   const banners = [];
   const waves = [];
   const stamps = [];
-  const trails = [[], []];
+  const trails = [[], [], [], []];
   let trailWorld = null;
   const cam = { zoom: 1, target: 1, fx: 0, fy: 0, hold: 0, follow: null };
   let marks = null;            // graphite scratches left on the plate by the pencil tips
   let marksFade = 0;
-  const lastTip = [null, null];
-  const hitPulse = [0, 0];     // squash when a top gets hit
+  const lastTip = [null, null, null, null];
+  const hitPulse = [0, 0, 0, 0]; // squash when a top gets hit
   const comics = [];           // "DHISHOOM!" bursts
   let comicCooldown = 0;
   const COMIC_WORDS = ['DHISHOOM!', 'THWACK!', 'BONK!', 'WHAM!', 'DHADAAM!', 'TADAK!'];
@@ -65,7 +66,7 @@ export function createRenderer(canvas) {
     marks = document.createElement('canvas');
     marks.width = bg.width;
     marks.height = bg.height;
-    lastTip[0] = lastTip[1] = null;
+    lastTip.fill(null);
   }
 
   function resize() {
@@ -74,7 +75,16 @@ export function createRenderer(canvas) {
     if (!w || !h) return; // hidden or minimised: keep the last good size
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
-    L = computeLayout(w, h);
+    L = computeLayout(w, h, view);
+    self.layout = L;
+    repaint();
+  }
+
+  // turn the bowl for this device (0 = the usual view)
+  function setView(angle) {
+    if (angle === view) return;
+    view = angle;
+    L = computeLayout(L.width, L.height, view);
     self.layout = L;
     repaint();
   }
@@ -92,7 +102,7 @@ export function createRenderer(canvas) {
     flash = Math.max(0, flash - dt * 2.5);
     if (slow.left > 0) { slow.left -= dt; if (slow.left <= 0) slow.scale = 1; }
     if (cam.hold > 0) cam.hold -= dt; else cam.target = cam.follow ?? 1;
-    for (let i = 0; i < 2; i++) hitPulse[i] = Math.max(0, hitPulse[i] - dt);
+    for (let i = 0; i < hitPulse.length; i++) hitPulse[i] = Math.max(0, hitPulse[i] - dt);
     comicCooldown = Math.max(0, comicCooldown - dt);
     for (let i = comics.length - 1; i >= 0; i--) { comics[i].t += dt; if (comics[i].t >= comics[i].life) comics.splice(i, 1); }
     cam.zoom += (cam.target - cam.zoom) * Math.min(1, dt * 7);
@@ -166,7 +176,7 @@ export function createRenderer(canvas) {
         burst(p.x, p.y, Math.min(26, 5 + e.impact * 12), false);
         if (quiet) continue;
         wave(p.x, p.y, 4, 24 + e.impact * 30, 0.35, 'rgba(255,255,255,0.9)', 3);
-        hitPulse[0] = hitPulse[1] = 0.14;
+        if (e.a != null) { hitPulse[e.a] = hitPulse[e.b] = 0.14; } else hitPulse.fill(0.14);
         if (e.impact > 1.05 && comicCooldown <= 0) {
           comics.push({ x: p.x, y: p.y, t: 0, life: 0.55, word: COMIC_WORDS[Math.floor(Math.random() * COMIC_WORDS.length)], size: Math.min(1.4, 0.8 + e.impact * 0.25), rot: rand(-0.3, 0.3) });
           comicCooldown = 0.45;
@@ -176,7 +186,7 @@ export function createRenderer(canvas) {
       } else if (quiet) {
         continue;
       } else if (e.type === 'damage') {
-        hud.hit(e.i, e.amount);
+        hud.hit(self.hudOrder ? self.hudOrder.indexOf(e.i) : e.i, e.amount); // bars are in this device's order
       } else if (e.type === 'snap') {
         const p = topScreen(world, e.i);
         const rpx = world.tops[e.i].spec.radius * L.scale;
@@ -201,7 +211,7 @@ export function createRenderer(canvas) {
         if (!reducedMotion()) shake = Math.max(shake, 8);
         banner('SPIN CLASH!', { color: '#d97706', size: 72, life: 1.2 });
       } else if (e.type === 'clashEnd') {
-        const w0 = topScreen(world, e.winner), l0 = topScreen(world, 1 - e.winner);
+        const w0 = topScreen(world, e.winner), l0 = topScreen(world, e.loser ?? 1 - e.winner);
         for (let k = 0; k < 22; k++) { // spin flies from the loser to the winner
           const f = k / 22;
           particles.push({ kind: 'spark', x: l0.x + (w0.x - l0.x) * f * 0.3, y: l0.y + (w0.y - l0.y) * f * 0.3,
@@ -209,6 +219,12 @@ export function createRenderer(canvas) {
         }
         wave(w0.x, w0.y, 10, 80, 0.5, PLAYER_COLORS[e.winner], 5);
         banner('CLASH WON! +spin', { x: w0.x, y: w0.y - 60, color: PLAYER_COLORS[e.winner], size: 28, life: 1.3 });
+      } else if (e.type === 'out') {
+        // a top knocked out of a 3–4 player round
+        const p = topScreen(world, e.i);
+        wave(p.x, p.y, 10, 90, 0.6, PLAYER_COLORS[e.i], 6);
+        sparks(p.x, p.y, 16, '#ffffff');
+        banner('OUT!', { x: p.x, y: p.y - 50, color: PLAYER_COLORS[e.i], size: 34, life: 1.2 });
       } else if (e.type === 'crumble') {
         // Snap KO: the eraser breaks apart into crumbs
         const p = topScreen(world, e.i);
@@ -399,7 +415,7 @@ export function createRenderer(canvas) {
         ctx.restore();
       }
     }
-    ctx.globalAlpha = opts.ghost ? 0.55 : 1 - 0.5 * Math.max(0, spin - 0.25);
+    ctx.globalAlpha = (opts.ghost ? 0.55 : 1 - 0.5 * Math.max(0, spin - 0.25)) * (opts.alpha ?? 1);
     drawEraserTop(ctx, spec.eraserId, rpx, spec.skin);
     ctx.globalAlpha = 1;
     drawLeadTop(ctx, spec.leadId, rpx, t.leadSnapped, spec.skin);
@@ -628,7 +644,7 @@ export function createRenderer(canvas) {
       const p = arenaToScreen(L, t.x, t.y);
       const prev = lastTip[i];
       lastTip[i] = p;
-      if (!prev || world.over || t.rpm <= 0) return;
+      if (!prev || world.over || t.rpm <= 0 || t.out) return;
       const jitter = t.wobble * 2.5;
       g.strokeStyle = `rgba(35,35,42,${0.22 + 0.2 * Math.min(1, t.wobble + 0.2)})`;
       g.lineWidth = 1.3 + t.wobble * 1.8;
@@ -687,7 +703,14 @@ export function createRenderer(canvas) {
   // the camera drifts toward the action and leans in when the tops get close
   function followAction(world) {
     if (reducedMotion() || cam.hold > 0) return;
-    const [a, b] = world.tops;
+    let a = world.tops[0], b = world.tops[1], best = Infinity;
+    if (world.tops.length > 2) {
+      const live = world.tops.filter((t) => !t.out);
+      for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) {
+        const dd = Math.hypot(live[i].x - live[j].x, live[i].y - live[j].y);
+        if (dd < best) { best = dd; a = live[i]; b = live[j]; }
+      }
+    }
     const pa = arenaToScreen(L, a.x, a.y), pb = arenaToScreen(L, b.x, b.y);
     const mx = (pa.x + pb.x) / 2, my = (pa.y + pb.y) / 2;
     const fx = L.cx + (mx - L.cx) * 0.35, fy = L.cy + (my - L.cy) * 0.35;
@@ -740,8 +763,9 @@ export function createRenderer(canvas) {
   // ---------- public draw calls ----------
   function drawBattle(world, frame) {
     if (trailWorld !== world) {
-      trailWorld = world; trails[0] = []; trails[1] = [];
-      lastTip[0] = lastTip[1] = null;
+      trailWorld = world;
+      trails.forEach((t) => { t.length = 0; });
+      lastTip.fill(null);
       if (marks) marks.getContext('2d').clearRect(0, 0, marks.width, marks.height);
     }
     world.tops.forEach((t, i) => {
@@ -760,6 +784,15 @@ export function createRenderer(canvas) {
     const fin = frame?.finish;
     world.tops.forEach((t, i) => {
       if (fin && i === fin.loser) { drawFinishedTop(t, i, fin); return; }
+      if (t.out) {
+        const fade = 1 - Math.min(1, (world.time - (t.outAt ?? world.time)) / 0.9);
+        if (fade <= 0) return;
+        ctx.save();
+        ctx.globalAlpha = fade;
+        drawTop(t, i, { time: world.time, alpha: fade });
+        ctx.restore();
+        return;
+      }
       drawTop(t, i, { time: world.time });
     });
     if (fin) drawFinisherProp(world, fin);
@@ -975,9 +1008,10 @@ export function createRenderer(canvas) {
     ctx.save();
     ctx.fillStyle = '#161616';
     ctx.fillRect(x - 4, y - 4, bw + 8, bh + 8);
-    ctx.fillStyle = PLAYER_COLORS[0];
+    const [ca, cb] = c.pair || [0, 1];
+    ctx.fillStyle = PLAYER_COLORS[ca];
     ctx.fillRect(x, y, bw * share, bh);
-    ctx.fillStyle = PLAYER_COLORS[1];
+    ctx.fillStyle = PLAYER_COLORS[cb];
     ctx.fillRect(x + bw * share, y, bw * (1 - share), bh);
     ctx.fillStyle = '#ffd23f';
     ctx.fillRect(x + bw * share - 3, y - 6, 6, bh + 12);
@@ -1025,11 +1059,12 @@ export function createRenderer(canvas) {
         ctx.strokeStyle = PLAYER_COLORS[i];
         ctx.lineWidth = 3;
         ctx.setLineDash([5, 6]);
-        const home = s.side === 0 ? Math.PI : 0;
+        const home = s.home ?? (s.side === 0 ? Math.PI : 0);
+        const range = s.range ?? LAUNCH.SLIDE_RANGE;
         ctx.beginPath();
-        for (let a = -LAUNCH.SLIDE_RANGE; a <= LAUNCH.SLIDE_RANGE + 1e-6; a += 0.05) {
+        for (let a = -range; a <= range + 1e-6; a += 0.05) {
           const q = arenaToScreen(L, LAUNCH.START_RADIUS * Math.cos(home + a), LAUNCH.START_RADIUS * Math.sin(home + a));
-          a === -LAUNCH.SLIDE_RANGE ? ctx.moveTo(q.x, q.y) : ctx.lineTo(q.x, q.y);
+          a === -range ? ctx.moveTo(q.x, q.y) : ctx.lineTo(q.x, q.y);
         }
         ctx.stroke();
         ctx.setLineDash([]);
@@ -1072,7 +1107,12 @@ export function createRenderer(canvas) {
         const off = rpx * 2.8;
         // label sits on the far side of the top from its player, or toward the middle when the twist pads take the edge
         const inward = !!frame?.pads?.[i];
-        const ly = p.y + (L.rotate ? ((i === 0) !== inward ? off : -off) : -off);
+        let ly = p.y + (L.rotate ? ((i === 0) !== inward ? off : -off) : -off);
+        if (frame?.radialLabels) {
+          // toward the middle of the bowl (or away from it when the twist pad isn't in the way)
+          const dy = p.y - L.cy;
+          ly = p.y + (Math.abs(dy) < 1 ? -off : Math.sign(dy) * (inward || frame.me === i ? -off : off));
+        }
         const lx = Math.min(Math.max(p.x, 110), L.width - 110);
         ctx.strokeText(label, lx, ly);
         ctx.fillStyle = PLAYER_COLORS[i];
@@ -1097,7 +1137,7 @@ export function createRenderer(canvas) {
   }
 
   Object.assign(self, {
-    resize, setArena, update, drawBattle, drawLaunch, drawIntro, drawIdle, spawnFromEvents, banner, burst,
+    resize, setArena, setView, update, drawBattle, drawLaunch, drawIntro, drawIdle, spawnFromEvents, banner, burst,
     get timeScale() { return slow.scale; },
     get clock() { return clock; },
     layout: L,

@@ -73,7 +73,7 @@ export function createWorld(specs, launches, rng = Math.random, opts = {}) {
     wind: opts.mods?.wind || null,
     quake: opts.mods?.quake || null,
     nextQuake: opts.mods?.quake?.every ?? Infinity,
-    clash: null, contact: 0, nextClash: 0,
+    clash: null, contacts: {}, nextClash: 0,
   };
 }
 
@@ -173,6 +173,7 @@ function applySpecials(w, intents) {
   w.zones = w.zones.filter((z) => z.until > w.time);
   w.tops.forEach((t, i) => {
     t.index = i;
+    if (t.out) return;
     if (t.planted && w.time >= t.specialUntil) t.planted = false;
     if (t.dashArmed && w.time >= t.dashArmedUntil) t.dashArmed = false;
     // abilities are a comeback tool: they unlock once health (spin) falls to the threshold
@@ -199,8 +200,17 @@ function hitDamage(victim, attacker, impact) {
   return d;
 }
 
+// every pair of tops still in the round
 function collide(w) {
-  const [a, b] = w.tops;
+  const n = w.tops.length;
+  for (let i = 0; i < n; i++) {
+    if (w.tops[i].out) continue;
+    for (let j = i + 1; j < n; j++) if (!w.tops[j].out) collidePair(w, i, j);
+  }
+}
+
+function collidePair(w, ia, ib) {
+  const a = w.tops[ia], b = w.tops[ib];
   const dx = b.x - a.x, dy = b.y - a.y;
   const d = Math.hypot(dx, dy);
   const minD = a.spec.radius + b.spec.radius;
@@ -237,22 +247,23 @@ function collide(w) {
   b.dashArmed = false;
   a.rpm = Math.max(0, a.rpm - dmgA);
   b.rpm = Math.max(0, b.rpm - dmgB);
+  const pair = [[a, ia], [b, ib]];
   const blocked = [a.shieldHits > 0, b.shieldHits > 0];
-  w.tops.forEach((t, i) => {
-    if (blocked[i]) {
+  pair.forEach(([t, i], k) => {
+    if (blocked[k]) {
       t.shieldHits--;
       w.events.push({ type: 'block', i, left: t.shieldHits });
     }
   });
-  if (dmgA > 0) w.events.push({ type: 'damage', i: 0, amount: dmgA });
-  if (dmgB > 0) w.events.push({ type: 'damage', i: 1, amount: dmgB });
+  if (dmgA > 0) w.events.push({ type: 'damage', i: ia, amount: dmgA });
+  if (dmgB > 0) w.events.push({ type: 'damage', i: ib, amount: dmgB });
   const rammed = [1.5 - shareA, 0.5 + shareA]; // the top being rammed shakes more
-  w.tops.forEach((t, i) => {
-    const other = w.tops[1 - i];
+  pair.forEach(([t, i], k) => {
+    const other = pair[1 - k][0];
     const shove = (2 * other.spec.mass) / (t.spec.mass + other.spec.mass); // heavy tops shake less
-    if (blocked[i]) return; // the shield takes the whole hit
-    t.wobble += impact * CONST.HIT_WOBBLE * rammed[i] * shove * statMul(t.spec.stability, CONST.STAB_K);
-    const snapHit = impact * rammed[i] > CONST.SNAP_BASE * t.spec.durability;
+    if (blocked[k]) return; // the shield takes the whole hit
+    t.wobble += impact * CONST.HIT_WOBBLE * rammed[k] * shove * statMul(t.spec.stability, CONST.STAB_K);
+    const snapHit = impact * rammed[k] > CONST.SNAP_BASE * t.spec.durability;
     if (t.leadSnapped && snapHit && !t.crumbled) {
       // second snap on a broken lead: the eraser crumbles (Snap KO)
       t.crumbled = true;
@@ -266,12 +277,13 @@ function collide(w) {
       w.events.push({ type: 'snap', i });
     }
   });
-  w.events.push({ type: 'hit', x: a.x + nx * a.spec.radius, y: a.y + ny * a.spec.radius, impact });
+  w.events.push({ type: 'hit', x: a.x + nx * a.spec.radius, y: a.y + ny * a.spec.radius, impact, a: ia, b: ib });
 }
 
 // Solid arena pieces (the sharpener): push out, bounce, and knock a little spin off.
 function bounceOffBumpers(w) {
   w.tops.forEach((t, i) => {
+    if (t.out) return;
     for (const b of w.bumpers) {
       const dx = t.x - b.x, dy = t.y - b.y;
       const d = Math.hypot(dx, dy);
@@ -293,28 +305,42 @@ function bounceOffBumpers(w) {
   });
 }
 
-// track how long the tops have been pressed together; long enough starts a clash
+// track how long each pair of tops has been pressed together; long enough starts a clash
 function watchForClash(w) {
   if (!w.clashOn || w.over) return;
-  const [a, b] = w.tops;
-  const close = Math.hypot(b.x - a.x, b.y - a.y) < (a.spec.radius + b.spec.radius) * 1.12;
-  w.contact = close ? w.contact + CONST.DT : Math.max(0, w.contact - CONST.DT * 2);
-  const healthy = w.tops.every((t) => t.rpm >= CLASH.minHealth * t.spec.maxRPM);
-  if (w.contact >= CLASH.contact && w.time >= w.nextClash && healthy) {
-    w.clash = { t: 0, mash: [0, 0], x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-    for (const t of w.tops) { t.vx = 0; t.vy = 0; }
-    w.events.push({ type: 'clashStart', x: w.clash.x, y: w.clash.y });
+  const n = w.tops.length;
+  let start = null;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const a = w.tops[i], b = w.tops[j];
+      const key = `${i}-${j}`;
+      const c = w.contacts[key] || 0;
+      if (a.out || b.out) { w.contacts[key] = 0; continue; }
+      const close = Math.hypot(b.x - a.x, b.y - a.y) < (a.spec.radius + b.spec.radius) * 1.12;
+      w.contacts[key] = close ? c + CONST.DT : Math.max(0, c - CONST.DT * 2);
+      const healthy = a.rpm >= CLASH.minHealth * a.spec.maxRPM && b.rpm >= CLASH.minHealth * b.spec.maxRPM;
+      if (!start && w.contacts[key] >= CLASH.contact && w.time >= w.nextClash && healthy) start = [i, j];
+    }
   }
+  if (!start) return;
+  const [a, b] = start.map((k) => w.tops[k]);
+  w.clash = { t: 0, pair: start, mash: [0, 0], x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  for (const t of w.tops) { t.vx = 0; t.vy = 0; }
+  w.events.push({ type: 'clashStart', x: w.clash.x, y: w.clash.y, pair: start });
 }
 
+// only the two tops in the clash mash; the rest of the bowl holds still
 function runClash(w, intents) {
   const c = w.clash;
+  const [p, q] = c.pair;
   c.t += CONST.DT;
-  intents?.forEach((it, i) => { c.mash[i] += it?.mash || 0; });
+  c.mash[0] += intents?.[p]?.mash || 0;
+  c.mash[1] += intents?.[q]?.mash || 0;
   if (c.t < CLASH.duration) return;
   const [m0, m1] = c.mash;
-  const winner = m0 !== m1 ? (m0 > m1 ? 0 : 1) : (w.tops[0].rpm >= w.tops[1].rpm ? 0 : 1);
-  const win = w.tops[winner], lose = w.tops[1 - winner];
+  const winner = m0 !== m1 ? (m0 > m1 ? p : q) : (w.tops[p].rpm >= w.tops[q].rpm ? p : q);
+  const loser = winner === p ? q : p;
+  const win = w.tops[winner], lose = w.tops[loser];
   lose.rpm = Math.max(1, lose.rpm - CLASH.steal * lose.spec.maxRPM);
   win.rpm = Math.min(win.spec.maxRPM, win.rpm + CLASH.gain * win.spec.maxRPM);
   lose.wobble += 0.12;
@@ -322,9 +348,21 @@ function runClash(w, intents) {
   lose.vx = (dx / d) * 1.3; lose.vy = (dy / d) * 1.3;
   win.vx = -(dx / d) * 0.3; win.vy = -(dy / d) * 0.3;
   w.clash = null;
-  w.contact = 0;
+  w.contacts[`${p}-${q}`] = 0;
   w.nextClash = w.time + CLASH.cooldown;
-  w.events.push({ type: 'clashEnd', winner, mash: [m0, m1] });
+  w.events.push({ type: 'clashEnd', winner, loser, pair: [p, q], mash: [m0, m1] });
+}
+
+// the closest top still in the round (dash aims at it)
+function nearestRival(w, i) {
+  const me = w.tops[i];
+  let best = null, bd = Infinity;
+  w.tops.forEach((t, j) => {
+    if (j === i || t.out) return;
+    const d = Math.hypot(t.x - me.x, t.y - me.y);
+    if (d < bd) { bd = d; best = t; }
+  });
+  return best || w.tops[(i + 1) % w.tops.length];
 }
 
 function lossReason(t) {
@@ -347,12 +385,13 @@ export function step(w, intents) {
   const dt = CONST.DT;
   const pre = w.tops.map((t) => t.rpm);
   applySpecials(w, intents, dt);
-  w.tops.forEach((t, i) => moveTop(w, t, intents?.[i], dt, w.tops[1 - i]));
+  w.tops.forEach((t, i) => { if (!t.out) moveTop(w, t, intents?.[i], dt, nearestRival(w, i)); });
   collide(w);
   if (w.bumpers.length) bounceOffBumpers(w);
   watchForClash(w);
   if (w.quake && w.time >= w.nextQuake) {
     for (const t of w.tops) {
+      if (t.out) continue;
       const a = w.rng() * Math.PI * 2;
       t.vx += Math.cos(a) * w.quake.strength;
       t.vy += Math.sin(a) * w.quake.strength;
@@ -363,19 +402,29 @@ export function step(w, intents) {
   }
   w.time += dt;
 
-  const reasons = w.tops.map(lossReason);
-  if (reasons[0] && reasons[1]) {
-    if (pre[0] === pre[1]) endRound(w, { winner: null, reason: 'draw' });
-    else {
-      const winner = pre[0] > pre[1] ? 0 : 1;
-      endRound(w, { winner, reason: reasons[1 - winner] });
+  // who went out this step; the round ends when one top (or none) is left spinning
+  const reasons = w.tops.map((t) => (t.out ? null : lossReason(t)));
+  const gone = reasons.map((x, i) => (x ? i : -1)).filter((i) => i >= 0);
+  const live = w.tops.map((t, i) => (!t.out && !reasons[i] ? i : -1)).filter((i) => i >= 0);
+  if (gone.length) {
+    const byPre = [...gone].sort((x, y) => pre[y] - pre[x]); // most spin first = went out "last"
+    if (live.length >= 2) {
+      for (const i of gone) {
+        w.tops[i].out = true;
+        w.tops[i].outReason = reasons[i];
+        w.tops[i].outAt = w.time;
+        w.events.push({ type: 'out', i, reason: reasons[i] });
+      }
+    } else if (live.length === 1) {
+      endRound(w, { winner: live[0], reason: reasons[byPre[0]] });
+    } else if (pre[byPre[0]] === pre[byPre[1]]) {
+      endRound(w, { winner: null, reason: 'draw' });
+    } else {
+      endRound(w, { winner: byPre[0], reason: reasons[byPre[1]] });
     }
-  } else if (reasons[0] || reasons[1]) {
-    const loser = reasons[0] ? 0 : 1;
-    endRound(w, { winner: 1 - loser, reason: reasons[loser] });
   } else if (w.time >= CONST.TIME_LIMIT) {
-    const [a, b] = w.tops.map((t) => t.rpm);
-    endRound(w, a === b ? { winner: null, reason: 'draw' } : { winner: a > b ? 0 : 1, reason: 'time' });
+    const ranked = [...live].sort((x, y) => w.tops[y].rpm - w.tops[x].rpm);
+    endRound(w, w.tops[ranked[0]].rpm === w.tops[ranked[1]].rpm ? { winner: null, reason: 'draw' } : { winner: ranked[0], reason: 'time' });
   }
 }
 
@@ -383,16 +432,16 @@ export function simulate(w, elapsed, intents) {
   const e = Math.min(Math.max(0, elapsed), CONST.MAX_ELAPSED);
   const n = Math.floor(e / CONST.DT + 1e-9);
   // a special pressed on a frame too short for a step waits for the next step
-  w.pendingSpecial ??= [false, false];
-  w.pendingMash ??= [0, 0];
+  w.pendingSpecial ??= w.tops.map(() => false);
+  w.pendingMash ??= w.tops.map(() => 0);
   intents?.forEach((it, i) => {
     if (it?.special) w.pendingSpecial[i] = true;
     w.pendingMash[i] += it?.mash || 0; // taps count once, however many steps the frame runs
   });
   for (let i = 0; i < n; i++) {
-    const withSpecial = [0, 1].map((k) => ({ steer: intents?.[k]?.steer || { x: 0, y: 0 }, special: w.pendingSpecial[k], mash: w.pendingMash[k] }));
-    w.pendingSpecial = [false, false];
-    w.pendingMash = [0, 0];
+    const withSpecial = w.tops.map((_, k) => ({ steer: intents?.[k]?.steer || { x: 0, y: 0 }, special: w.pendingSpecial[k], mash: w.pendingMash[k] }));
+    w.pendingSpecial = w.tops.map(() => false);
+    w.pendingMash = w.tops.map(() => 0);
     step(w, withSpecial);
   }
   return e - n * CONST.DT;

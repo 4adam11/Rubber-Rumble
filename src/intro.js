@@ -19,7 +19,80 @@ function outlined(ctx, text, x, y, fill, stroke, lw) {
   ctx.fillText(text, x, y);
 }
 
+// 3–4 fighters: a card each in a grid, sliding in one after another
+function drawCrowdIntro(ctx, L, p, data, clock) {
+  const W = L.width, H = L.height;
+  const n = data.players.length;
+  const outro = seg(p, 0.86, 1);
+  ctx.fillStyle = `rgba(10,8,20,${0.72 * (1 - outro)})`;
+  ctx.fillRect(0, 0, W, H);
+  const cols = W > H ? n : 2;
+  const rows = Math.ceil(n / cols);
+  const pad = 10;
+  const cw = (W - pad * (cols + 1)) / cols;
+  const ch = Math.min((H - pad * (rows + 1) - 90) / rows, cw * 1.5);
+  const top = (H - (ch * rows + pad * (rows - 1))) / 2;
+  data.players.forEach((pl, i) => {
+    const col = i % cols, row = Math.floor(i / cols);
+    const inT = back(seg(p, 0.02 + i * 0.05, 0.22 + i * 0.05));
+    const out = ease(outro);
+    const x = pad + col * (cw + pad), y = top + row * (ch + pad);
+    const dir = col < cols / 2 ? -1 : 1;
+    ctx.save();
+    ctx.translate(dir * W * (1 - inT + out) * 0.7, 0);
+    const g = ctx.createLinearGradient(x, y, x + cw, y + ch);
+    g.addColorStop(0, shade(pl.color, 0.08));
+    g.addColorStop(1, shade(pl.color, -0.28));
+    ctx.fillStyle = g;
+    ctx.fillRect(x, y, cw, ch);
+    ctx.strokeStyle = '#ffd23f';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x + 1.5, y + 1.5, cw - 3, ch - 3);
+    const size = Math.min(cw * 0.62, ch * 0.5, 170);
+    ctx.save();
+    ctx.translate(x + cw / 2, y + ch * 0.38 + Math.sin(clock * 3 + i) * 4);
+    ctx.rotate(Math.sin(clock * 2.4 + i) * 0.06);
+    drawTopSide(ctx, pl.eraserId, pl.leadId, size, pl.skin);
+    ctx.restore();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `800 ${Math.min(30, cw * 0.14)}px ${HAND}`;
+    outlined(ctx, pl.name.toUpperCase(), x + cw / 2, y + ch * 0.76, '#fff', 'rgba(0,0,0,0.75)', 5);
+    const a = ABILITIES[pl.ability];
+    if (a) {
+      ctx.font = `700 ${Math.min(14, cw * 0.07)}px ${SANS}`;
+      outlined(ctx, `${a.icon} ${a.name}`, x + cw / 2, y + ch * 0.9, '#fff', 'rgba(0,0,0,0.6)', 4);
+    }
+    ctx.restore();
+  });
+  const vsT = seg(p, 0.32, 0.44);
+  if (vsT > 0 && outro < 1) {
+    const sc = vsT < 1 ? 3 - 2 * ease(vsT) : 1 + Math.sin(clock * 6) * 0.03;
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(sc, sc);
+    ctx.rotate(-0.1);
+    ctx.globalAlpha = Math.min(1, vsT * 3) * (1 - outro);
+    ctx.font = `900 ${Math.min(64, W * 0.11)}px ${HAND}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    outlined(ctx, `${n}-WAY BATTLE!`, 0, 0, '#ffd23f', '#161616', 10);
+    ctx.restore();
+  }
+  const capT = ease(seg(p, 0.48, 0.62));
+  if (capT > 0) {
+    ctx.save();
+    ctx.globalAlpha = capT * (1 - outro);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `700 ${Math.min(24, W * 0.055)}px ${HAND}`;
+    outlined(ctx, `${data.round} · ${data.arenaName}`, W / 2, H - 40, '#fff', 'rgba(0,0,0,0.7)', 6);
+    ctx.restore();
+  }
+}
+
 export function drawIntro(ctx, L, p, data, clock) {
+  if (data.players.length > 2) { drawCrowdIntro(ctx, L, p, data, clock); return; }
   const W = L.width, H = L.height;
   const portrait = H > W;
   const outro = seg(p, 0.86, 1);

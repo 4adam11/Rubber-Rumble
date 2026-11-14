@@ -7,9 +7,9 @@ export const FINISH_NAMES = {
   stopped: 'Spin Finish', time: 'Spin Finish', tipped: 'Tip Finish', ringout: 'Knock-Out', snapko: 'Snap KO',
 };
 
-export function createMatch({ target = TARGET_POINTS } = {}) {
-  const points = [0, 0];
-  const wins = [0, 0];
+export function createMatch({ target = TARGET_POINTS, seats = 2 } = {}) {
+  const points = Array(seats).fill(0);
+  const wins = Array(seats).fill(0);
   const rounds = [];
   let winner = null;
   const state = () => ({
@@ -19,7 +19,7 @@ export function createMatch({ target = TARGET_POINTS } = {}) {
   return {
     record(result) {
       if (winner !== null) return state();
-      const scored = result.winner === 0 || result.winner === 1 ? POINTS[result.reason] ?? 1 : 0;
+      const scored = Number.isInteger(result.winner) && result.winner >= 0 && result.winner < seats ? POINTS[result.reason] ?? 1 : 0;
       rounds.push({ ...result, points: scored });
       if (scored) {
         points[result.winner] += scored;

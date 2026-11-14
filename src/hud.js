@@ -9,7 +9,7 @@ const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
 export function createHud() {
-  const st = [0, 1].map(() => ({ shown: 1, ghost: 1, hold: 0, flash: 0, shake: 0 }));
+  const st = [0, 1, 2, 3].map(() => ({ shown: 1, ghost: 1, hold: 0, flash: 0, shake: 0 }));
 
   function update(dt, healths) {
     st.forEach((s, i) => {
@@ -198,9 +198,82 @@ export function createHud() {
     ctx.fillText(secs == null ? '∞' : String(Math.max(0, Math.ceil(secs))), x, y + 1);
   }
 
+  // a rival in a 3–4 player room: small portrait, name, points and a thin health bar
+  function mini(ctx, i, x, y, w, h, p, clock) {
+    const s = st[i];
+    const shakeX = s.shake ? (Math.random() - 0.5) * s.shake * 0.5 : 0;
+    const port = h;
+    ctx.save();
+    ctx.translate(shakeX, 0);
+    ctx.globalAlpha = p.out ? 0.45 : 1;
+    ctx.fillStyle = '#161616';
+    ctx.fillRect(x - 1, y - 1, port + 2, port + 2);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(x, y, port, port);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, port, port);
+    ctx.clip();
+    ctx.translate(x + port / 2, y + port / 2);
+    ctx.rotate(clock * (p.health == null ? 0.6 : 2.5 * Math.max(0.15, s.shown)));
+    drawEraserTop(ctx, p.eraserId, port * 0.32, p.skin);
+    ctx.restore();
+    const bx = x + port + 5, bw = Math.max(10, w - port - 5);
+    const fs = Math.max(10, Math.min(14, h * 0.46));
+    ctx.font = `700 ${fs}px ${HAND}`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    const label = p.out ? `${p.name} · out` : p.name;
+    ctx.strokeText(label, bx, y + fs * 0.55, bw * 0.62);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, bx, y + fs * 0.55, bw * 0.62);
+    const target = p.target || 4;
+    const pr = Math.max(2.5, Math.min(4, h * 0.13));
+    for (let k = 0; k < target; k++) {
+      const mx = bx + bw - pr - k * (pr * 2 + 3);
+      ctx.beginPath();
+      ctx.arc(mx, y + fs * 0.55, pr, 0, Math.PI * 2);
+      ctx.fillStyle = k < p.points ? '#ffd23f' : 'rgba(0,0,0,0.45)';
+      ctx.fill();
+    }
+    const by = y + h - Math.max(5, h * 0.3), bh = Math.max(5, h * 0.3);
+    ctx.fillStyle = '#161616';
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.fillStyle = '#d62828';
+    ctx.fillRect(bx, by, bw * s.ghost, bh);
+    ctx.fillStyle = s.shown <= UNLOCK_AT + 0.001 ? '#ff5a3a' : '#ffc531';
+    ctx.fillRect(bx, by, bw * s.shown, bh);
+    if (s.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${s.flash * 3})`; ctx.fillRect(bx, by, bw, bh); }
+    ctx.restore();
+  }
+
+  // 3–4 players: this device's player gets the big bar, rivals a compact list
+  function drawCrowd(ctx, L, data, clock) {
+    const W = L.width, rivals = data.players.slice(1);
+    if (L.hud === 'top') {
+      const compact = W < 520;
+      const tw = compact ? 44 : 56;
+      const bw = (W - 24 - tw) / 2;
+      block(ctx, 0, 12, 12, bw, data.players[0], clock, compact);
+      timer(ctx, 12 + bw + tw / 2, 12 + (compact ? 20 : 24), data.time, compact);
+      const rh = Math.min(22, (72 - 4 * (rivals.length - 1)) / rivals.length);
+      rivals.forEach((p, k) => mini(ctx, k + 1, W - 12 - bw, 10 + k * (rh + 4), bw, rh, p, clock));
+    } else {
+      const R = THALI_OUTER * L.scale;
+      const side = (W - 2 * R) / 2;
+      const bw = Math.min(330, side - 32);
+      block(ctx, 0, 16, 16, bw, data.players[0], clock, false);
+      timer(ctx, 16 + bw / 2, 16 + 110, data.time, false);
+      rivals.forEach((p, k) => mini(ctx, k + 1, W - 16 - bw, 16 + k * 44, bw, 36, p, clock));
+    }
+  }
+
   function draw(ctx, L, data, clock) {
     if (!data) return;
     const W = L.width;
+    if (data.players.length > 2) { drawCrowd(ctx, L, data, clock); return; }
     if (L.hud === 'top') {
       const compact = W < 520;
       const tw = compact ? 48 : 60;

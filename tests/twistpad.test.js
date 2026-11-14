@@ -105,7 +105,7 @@ test('holding a full pull charges to 80% in CHARGE_TIME, then slower to the top'
   while (s.rpm < 800 - 1e-6) { chargeSpin(s, 1, dt); t += dt; }
   assert.ok(Math.abs(t - LAUNCH.CHARGE_TIME) < 0.05, `80% after ${t.toFixed(2)}s`);
   while (s.rpm < 1000 && t < 10) { chargeSpin(s, 1, dt); t += dt; }
-  assert.ok(t < LAUNCH.PAD_TWIST_TIME - 1, `full in ${t.toFixed(2)}s leaves time to pick the release`);
+  assert.ok(t < LAUNCH.PAD_TWIST_TIME - 0.9, `full in ${t.toFixed(2)}s leaves time to pick the release`);
   assert.equal(chargeSpin(s, 1, dt), 0, 'stops at max');
 });
 

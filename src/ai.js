@@ -1,6 +1,6 @@
 // Computer opponent. Pure: no DOM.
 import { ERASERS, LEADS, buildTop } from './parts.js';
-import { LAUNCH } from './launch.js';
+import { LAUNCH, seatAngle, seatRange } from './launch.js';
 import { ABILITY_IDS } from './abilities.js';
 
 export const DIFFICULTY = {
@@ -33,11 +33,11 @@ export function pickCombo(difficulty, opponentSpec, rng = Math.random) {
   }
 }
 
-export function cpuLaunch(spec, difficulty, side, rng = Math.random) {
+export function cpuLaunch(spec, difficulty, side, rng = Math.random, seats = 2) {
   const d = DIFFICULTY[difficulty];
   const frac = Math.max(0.3, Math.min(1, d.rpm + d.spread * (rng() * 2 - 1)));
   const perfect = rng() < d.perfect;
-  const angle = (side === 0 ? Math.PI : 0) + (rng() * 2 - 1) * LAUNCH.SLIDE_RANGE * 0.5;
+  const angle = seatAngle(side, seats) + (rng() * 2 - 1) * seatRange(seats) * 0.5;
   return {
     x: LAUNCH.START_RADIUS * Math.cos(angle),
     y: LAUNCH.START_RADIUS * Math.sin(angle),
@@ -83,8 +83,20 @@ export function pickAbility(difficulty, mySpec, oppSpec, rng = Math.random) {
   return pick(ABILITY_IDS, rng);
 }
 
+// the closest rival still spinning (with two tops: the other one)
+function nearestRival(world, index) {
+  const me = world.tops[index];
+  let best = null, bd = Infinity;
+  world.tops.forEach((t, j) => {
+    if (j === index || t.out) return;
+    const d = Math.hypot(t.x - me.x, t.y - me.y);
+    if (d < bd) { bd = d; best = t; }
+  });
+  return best || world.tops[(index + 1) % world.tops.length];
+}
+
 function decide(world, index) {
-  const me = world.tops[index], opp = world.tops[1 - index];
+  const me = world.tops[index], opp = nearestRival(world, index);
   const d = Math.hypot(me.x, me.y);
   let steer;
   const arch = me.spec.archetype;
@@ -117,6 +129,7 @@ export function createCpu(difficulty, index, rng = Math.random) {
   return {
     think(world, dt) {
       if (world.clash) {
+        if (world.clash.pair && !world.clash.pair.includes(index)) return { steer: { x: 0, y: 0 }, special: false, mash: 0 };
         mashAcc += MASH_RATE[difficulty] * dt * (0.8 + 0.4 * rng());
         const taps = Math.floor(mashAcc);
         mashAcc -= taps;
