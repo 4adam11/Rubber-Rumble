@@ -486,9 +486,13 @@ export function createUI(root, handlers, opts = {}) {
         </div>
         <ul class="rules">
           <li><b>Build a top:</b> an eraser body + a pencil-lead tip. Matching brands unlock combos like <em>Deadly Duo</em>.</li>
-          <li><b>Health is spin.</b> It drains over time and drops on every hit. Heavy hits can <b>snap your lead</b>.</li>
-          <li>You lose a round when your health runs out, you <b>tip over</b>, or you get <b>knocked out</b>. Best of 3.</li>
+          <li><b>Spin direction:</b> your first flick (or first key) sets it — ↻ or ↺. Opposite spins hit harder.</li>
+          <li><b>Health is spin.</b> It drains over time and drops on every hit. A heavy hit <b>snaps your lead</b>; a second one crumbles your eraser.</li>
+          <li><b>Points, first to 4:</b> Spin Finish 1 · Tip Finish 2 · Knock-Out 2 · <b>Snap KO 3</b>. Win without taking damage for a <em>Flawless</em>.</li>
+          <li><b>Spin Clash:</b> when the tops grind together, mash your keys (or tap) faster than your rival to steal their spin.</li>
+          <li><b>FINISH IT!</b> Win the match and enter the moves in time for a <em>Rubberality</em>.</li>
           <li><b>Arenas:</b> the Steel Thali is smooth; the Tiffin Lid has sticky dal stains; the Geometry Box has ink blots, shavings and a sharpener in the way.</li>
+          <li><b>School Tournament:</b> beat five classmates, each with a twist, and then the Principal. <b>Stationery Shop:</b> spend your pocket money on sleeves and pencil paints.</li>
         </ul>
         <table class="keys">
           <thead><tr><th></th><th>Player 1</th><th>Player 2</th></tr></thead>
@@ -497,6 +501,8 @@ export function createUI(root, handlers, opts = {}) {
             <tr><td>Let go</td><td><kbd>W</kbd></td><td><kbd>↑</kbd></td></tr>
             <tr><td>Steer</td><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td>Arrows</td></tr>
             <tr><td>Ability</td><td><kbd>Space</kbd></td><td><kbd>Enter</kbd></td></tr>
+            <tr><td>Spin Clash</td><td>mash <kbd>A</kbd> <kbd>D</kbd></td><td>mash <kbd>←</kbd> <kbd>→</kbd></td></tr>
+            <tr><td>FINISH IT!</td><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> + <kbd>Space</kbd></td><td>Arrows + <kbd>Enter</kbd></td></tr>
             <tr><td>Pause</td><td colspan="2"><kbd>Esc</kbd> or <kbd>P</kbd></td></tr>
           </tbody>
         </table>
