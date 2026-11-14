@@ -2,6 +2,7 @@
 // Pure helpers at the top; createInput touches the DOM.
 import { screenToArena, screenToArenaVec, TOP_HUD } from './layout.js';
 import { createPairStrokeDetector, createCircleStrokeDetector } from './launch.js';
+import { PAD, gripAt, gripX } from './twistpad.js';
 
 export function playerForPoint(x, y, width, height, players) {
   if (players !== 2) return 0;
@@ -57,6 +58,10 @@ export function createInput(target, getLayout, opts = {}) {
   let edge = [fresh(), fresh()];
   const pair = [createPairStrokeDetector(), createPairStrokeDetector()];
   const circle = [createCircleStrokeDetector(), createCircleStrokeDetector()];
+  // phone twist pad: two stacked grips swiped past each other (opts.getPad(p) gives its geometry)
+  const padPair = [createPairStrokeDetector(PAD.STROKE_PX), createPairStrokeDetector(PAD.STROKE_PX)];
+  const padFlash = [-9, -9];
+  const padFor = (p) => (phase === 'launch' ? opts.getPad?.(p) || null : null);
   let mouse = null; // {x, y, startX, startY}
   const hadTouches = [0, 0];
 
@@ -105,7 +110,18 @@ export function createInput(target, getLayout, opts = {}) {
       const p = playerForPoint(t.clientX, t.clientY, L.width, L.height, players);
       if (phase === 'battle' && insideButton(p, t.clientX, t.clientY)) { edge[p].special = true; continue; }
       if (phase === 'battle') edge[p].taps++;
+      const pad = padFor(p);
+      const grip = pad ? gripAt(pad, t.clientX, t.clientY) : null;
+      if (grip && tracker.touchesFor(p).some((o) => o.grip === grip)) continue; // that grip already has a thumb
       if (tracker.down(t.identifier, t.clientX, t.clientY, p)) {
+        tracker.get(t.identifier).grip = grip;
+        if (grip) {
+          // both thumbs down: start measuring the swipes from where they are now
+          padPair[p].reset();
+          const ts = tracker.touchesFor(p);
+          const gt = ts.find((o) => o.grip === 'top'), gb = ts.find((o) => o.grip === 'bottom');
+          if (gt && gb) padPair[p].update((gt.x - pad.cx) * pad.flip, (gb.x - pad.cx) * pad.flip, now());
+        }
         if (tracker.touchesFor(p).length === 2) pair[p].reset();
         circle[p].reset();
       }
@@ -120,7 +136,15 @@ export function createInput(target, getLayout, opts = {}) {
     const tNow = now();
     for (let p = 0; p < players; p++) {
       const ts = tracker.touchesFor(p);
-      if (ts.length === 2) {
+      const gt = ts.find((t) => t.grip === 'top'), gb = ts.find((t) => t.grip === 'bottom');
+      if (gt || gb) {
+        // the twist pad: only the two grips rubbing past each other count
+        const pad = padFor(p);
+        if (pad && gt && gb) {
+          const s = padPair[p].update((gt.x - pad.cx) * pad.flip, (gb.x - pad.cx) * pad.flip, tNow);
+          if (s > 0) { edge[p].strokes.push(s * (padPair[p].sign || 1)); padFlash[p] = tNow; }
+        }
+      } else if (ts.length === 2) {
         const [a, b] = ts;
         const side = Math.abs(a.x - b.x) >= Math.abs(a.y - b.y);
         const s = side ? pair[p].update(a.y, b.y, tNow) : pair[p].update(a.x, b.x, tNow);
@@ -145,7 +169,11 @@ export function createInput(target, getLayout, opts = {}) {
       }
     }
     // always forget lifted fingers, even while a menu is up, or they go stale
-    for (const t of e.changedTouches) tracker.up(t.identifier);
+    for (const t of e.changedTouches) {
+      const tr = tracker.get(t.identifier);
+      if (tr?.grip) padPair[tr.player].reset();
+      tracker.up(t.identifier);
+    }
     for (let p = 0; p < players; p++) {
       if (hadTouches[p] > 0 && tracker.touchesFor(p).length === 0) {
         if (phase === 'launch') edge[p].release = true;
@@ -243,6 +271,7 @@ export function createInput(target, getLayout, opts = {}) {
       }
       pair.forEach((d) => d.reset());
       circle.forEach((d) => d.reset());
+      padPair.forEach((d) => d.reset());
     },
     setPlayers(n) { players = n; },
     get players() { return players; },
@@ -261,6 +290,18 @@ export function createInput(target, getLayout, opts = {}) {
         taps: e.taps,
         moves: e.moves,
         touching: tracker.touchesFor(p).length > 0 || (p === 0 && !!mouse),
+      };
+    },
+    // where the thumbs are on player p's twist pad, for drawing
+    padState(p) {
+      const pad = padFor(p);
+      if (!pad) return null;
+      const ts = tracker.touchesFor(p);
+      const gt = ts.find((t) => t.grip === 'top'), gb = ts.find((t) => t.grip === 'bottom');
+      return {
+        top: gt ? gripX(pad, gt.x) : null,
+        bottom: gb ? gripX(pad, gb.x) : null,
+        flash: Math.max(0, 1 - (now() - padFlash[p]) / 0.25),
       };
     },
     joystick(p) {

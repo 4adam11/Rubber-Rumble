@@ -1006,34 +1006,6 @@ export function createRenderer(canvas) {
     ctx.fillText(String(c.mash[1]), x + bw - 8, y + bh / 2 + 1);
   }
 
-  function thumbsGuide(p, i, rpx) {
-    // two thumbs flicking past each other next to the top
-    const k = Math.sin(clock * 12);
-    ctx.save();
-    ctx.globalAlpha = 0.9;
-    for (const side of [-1, 1]) {
-      const x = p.x + side * rpx * 2.6;
-      const y = p.y + side * k * rpx * 0.9;
-      ctx.beginPath();
-      ctx.ellipse(x, y, rpx * 0.55, rpx * 0.75, 0, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,224,190,0.92)';
-      ctx.fill();
-      ctx.strokeStyle = PLAYER_COLORS[i];
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.ellipse(x, y - rpx * 0.35, rpx * 0.3, rpx * 0.22, 0, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,255,255,0.75)';
-      ctx.fill();
-      ctx.fillStyle = PLAYER_COLORS[i];
-      ctx.font = `700 ${Math.max(12, rpx * 0.6)}px system-ui, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(side * k > 0 ? '▼' : '▲', x, y + rpx * 1.15);
-    }
-    ctx.restore();
-  }
-
   function drawLaunch(launches, frame) {
     cam.follow = null; cam.fx = L.cx; cam.fy = L.cy;
     begin();
@@ -1077,7 +1049,6 @@ export function createRenderer(canvas) {
         ctx.lineCap = 'round';
         ctx.stroke();
         ctx.lineCap = 'butt';
-        if (frame?.touchGuide?.[i]) thumbsGuide(p, i, rpx);
         if (s.spinDir) {
           ctx.font = `900 ${Math.max(18, rpx * 0.9)}px system-ui, sans-serif`;
           ctx.textAlign = 'center';
@@ -1099,7 +1070,9 @@ export function createRenderer(canvas) {
         ctx.lineJoin = 'round';
         ctx.strokeStyle = '#fffdf6';
         const off = rpx * 2.8;
-        const ly = p.y + (L.rotate ? (i === 0 ? off : -off) : -off);
+        // label sits on the far side of the top from its player, or toward the middle when the twist pads take the edge
+        const inward = !!frame?.pads?.[i];
+        const ly = p.y + (L.rotate ? ((i === 0) !== inward ? off : -off) : -off);
         const lx = Math.min(Math.max(p.x, 110), L.width - 110);
         ctx.strokeText(label, lx, ly);
         ctx.fillStyle = PLAYER_COLORS[i];

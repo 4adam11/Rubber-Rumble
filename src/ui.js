@@ -486,7 +486,7 @@ export function createUI(root, handlers, opts = {}) {
         </div>
         <ul class="rules">
           <li><b>Build a top:</b> an eraser body + a pencil-lead tip. Matching brands unlock combos like <em>Deadly Duo</em>.</li>
-          <li><b>Spin direction:</b> your first flick (or first key) sets it — ↻ or ↺. Opposite spins hit harder.</li>
+          <li><b>Spin direction:</b> your first swipe of the grips (or first key) sets it — ↻ or ↺. Opposite spins hit harder.</li>
           <li><b>Health is spin.</b> It drains over time and drops on every hit. A heavy hit <b>snaps your lead</b>; a second one crumbles your eraser.</li>
           <li><b>Points, first to 4:</b> Spin Finish 1 · Tip Finish 2 · Knock-Out 2 · <b>Snap KO 3</b>. Win without taking damage for a <em>Flawless</em>.</li>
           <li><b>Spin Clash:</b> when the tops grind together, mash your keys (or tap) faster than your rival to steal their spin.</li>

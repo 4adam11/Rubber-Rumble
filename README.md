@@ -33,7 +33,7 @@ node tools/balance.mjs 200 1 all   # rounds per matchup, seed, arena (thali|tiff
 1. **Build a top**: pick an eraser (the body) and a pencil lead (the tip). The stat bars fill and empty as you swap parts.
 2. **Pick your comeback ability** (see below) and an **arena**.
 3. **Place** your top on your side of the rim.
-4. **Twist**: flick two thumbs past each other again and again (touch), or mash your two keys one after the other.
+4. **Twist**: on a phone, put one thumb on each of the two grips stacked at the bottom of the screen and rub them past each other, back and forth. On a keyboard, mash your two keys one after the other.
 5. **Let go** when the ring around your top is tight for a **Perfect Release** (no wobble, +5% spin).
 6. **Battle**: your **health bar is your spin**. It drains over time and drops on every hit. Nudge your top around (costs a little health).
 7. At **30% health your ability unlocks**. Fire it once to turn the fight around.
@@ -49,12 +49,12 @@ node tools/balance.mjs 200 1 all   # rounds per matchup, seed, arena (thali|tiff
 | FINISH IT! | `W A S D` + `Space` | Arrows + `Enter` |
 | Pause | `Esc` / `P` | |
 
-Touch: drag to place, two-thumb flick to twist, lift to let go. In battle, drag on your side to steer and tap the big ability button when it lights up. The **How to play** screen has an animated demo of every control.
+Touch: drag to place, then rub the **twist pad** (two grips, one above the other, at the bottom of the screen; in 2-player portrait Player 2's pad is at the top, facing them), lift both thumbs to let go. In battle, drag on your side to steer and tap the big ability button when it lights up. The **How to play** screen has an animated demo of every control.
 
 ## Scoring, clashes and finishers
 
 - **Points, first to 4** (Beyblade X style): Spin Finish 1 · Tip Finish 2 · Knock-Out 2 · **Snap KO 3** (a snapped lead takes a second big hit and the eraser crumbles). Winning a round without taking damage is a **Flawless**.
-- **Spin direction:** your first twist flick (or first key) sets ↻ or ↺. Opposite spins hit harder.
+- **Spin direction:** your first swipe (top grip right = ↻, left = ↺) or first key sets the spin. Opposite spins hit harder.
 - **Spin Clash:** when the tops grind together they lock up; mash your keys (or tap) faster than your rival to steal their spin.
 - **FINISH IT!** After the match-winning round, enter the shown moves in time for a **Rubberality** (Sharpener Shred or Rub-Out).
 - **Announcer:** round calls, "Ghumao!", finish calls and Flawless, using your device's built-in voice.
@@ -132,6 +132,7 @@ Brand names are plain part names only. The erasers and pencils are drawn from sc
 | `src/finisher.js`, `src/announcer.js` | FINISH IT! sequences; announcer lines |
 | `src/tournament.js`, `src/economy.js` | School Tournament ladder; coins and the shop |
 | `src/input.js` | Touch / mouse / keyboard → per-player intents |
+| `src/twistpad.js` | The phone twist pad: two stacked grips rubbed past each other |
 | `src/layout.js` | Screen ↔ arena mapping and where the health bars go |
 | `src/render.js` | Tops, effects (trails, shockwaves, lead-snap slow-mo), launch, banners |
 | `src/art.js`, `src/arena-art.js` | Eraser/pencil art and arena backgrounds |

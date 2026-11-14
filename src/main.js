@@ -7,6 +7,7 @@ import {
 import { cpuLaunch, createCpu, pickCombo, pickAbility } from './ai.js';
 import { createRenderer, PLAYER_COLORS, arenaToScreen } from './render.js';
 import { createInput, specialButton } from './input.js';
+import { twistPad, drawTwistPad } from './twistpad.js';
 import { createMatch, roundLabel, POINTS, FINISH_NAMES, TARGET_POINTS } from './match.js';
 import { createUI } from './ui.js';
 import { createAudio } from './audio.js';
@@ -49,6 +50,9 @@ const input = createInput(canvas, () => renderer.layout, {
     if (!s) return null;
     return arenaToScreen(renderer.layout, LAUNCH.START_RADIUS * Math.cos(s.rimAngle), LAUNCH.START_RADIUS * Math.sin(s.rimAngle));
   },
+  // phones: the stacked twist grips for each human player during the launch
+  getPad: (p) => (coarse && game && !isDemo() && game.phase === 'launch' && !isCpu(p) && game.launches?.[p]?.phase !== 'done'
+    ? twistPad(p, renderer.layout, input.players) : null),
   onMute: () => toggleSound(),
   onPause: () => {
     if (game?.phase === 'intro' && !isDemo()) { skipIntro(); return; }
@@ -689,7 +693,7 @@ function hints(i) {
     return coarse ? `Drag to place · ${left}s` : `${keys[0]}/${keys[1]} to place · ${left}s`;
   }
   if (s.phase === 'twist') {
-    if (coarse) return 'Flick 2 thumbs! First flick sets the spin';
+    if (coarse) return s.spinDir ? 'Keep rubbing! Lift both thumbs to launch' : 'Rub the two grips! First swipe sets the spin';
     if (vsCpu()) return `Mash ${keys[0]}↔${keys[1]} · start on ${keys[1]} for ↻, ${keys[0]} for ↺ · ${keys[2]} to let go`;
     return `Mash ${keys[0]}↔${keys[1]}! ${keys[2]} to let go`;
   }
@@ -726,13 +730,26 @@ function frameData() {
     launchLabels: game.phase === 'launch' ? [0, 1].map(hints) : null,
     finish: game.phase === 'finishit' ? finishFrame() : null,
     clashHint: coarse ? 'SPIN CLASH! TAP TAP TAP!' : game.config.mode === '2p' ? 'MASH!  P1: A/D   P2: ←/→' : 'MASH A / D!',
-    touchGuide: coarse && game.phase === 'launch' ? humans : null,
+    pads: coarse && game.phase === 'launch' ? humans.map((h, i) => h && game.launches[i].phase === 'twist') : null,
     overlay: drawTouchControls,
   };
 }
 
+function drawTwistPads(ctx, L) {
+  const humans = game.config.mode === '2p' ? [0, 1] : [0];
+  for (const i of humans) {
+    const s = game.launches[i];
+    if (!s || s.phase === 'done') continue;
+    drawTwistPad(ctx, twistPad(i, L, input.players), input.padState(i) || {}, {
+      color: PLAYER_COLORS[i], clock: renderer.clock, dim: s.phase === 'place',
+    });
+  }
+}
+
 function drawTouchControls(ctx, L) {
-  if (!coarse || game.phase !== 'battle' || paused) return;
+  if (!coarse || paused) return;
+  if (game.phase === 'launch') { drawTwistPads(ctx, L); return; }
+  if (game.phase !== 'battle') return;
   const humans = game.config.mode === '2p' ? [0, 1] : [0];
   for (const i of humans) {
     const b = specialButton(i, L.width, L.height, input.players);

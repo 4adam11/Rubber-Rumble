@@ -83,9 +83,9 @@ export function updateLaunch(state, dt) {
   if (state.phase === 'twist' && state.t >= LAUNCH.PLACE_TIME + LAUNCH.TWIST_TIME - 1e-9) finish(state, 0.5);
 }
 
-// Two fingers moving past each other vertically. Each reversal of ≥ 30 px
+// Two fingers moving past each other. Each reversal of ≥ px (30 by default)
 // in the gap between them (y1 − y2) is one stroke.
-export function createPairStrokeDetector() {
+export function createPairStrokeDetector(px = LAUNCH.STROKE_PX) {
   let anchor = null, anchorT = 0, lastSign = 0;
   return {
     update(y1, y2, t) {
@@ -97,7 +97,7 @@ export function createPairStrokeDetector() {
         anchor = gap; anchorT = t; // keep following the same direction to its peak
         return 0;
       }
-      if (Math.abs(delta) >= LAUNCH.STROKE_PX && sign !== lastSign) {
+      if (Math.abs(delta) >= px && sign !== lastSign) {
         const speed = Math.abs(delta) / Math.max(1e-3, t - anchorT);
         anchor = gap; anchorT = t; lastSign = sign;
         return Math.max(0.5, Math.min(1.5, speed / 1200));
