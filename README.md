@@ -69,7 +69,20 @@ Touch: drag to place, then pull the **twist pad** grips apart and hold to charge
 How it works: the room creator's device runs the battle and the others send their moves to it, directly between devices (WebRTC, using the free PeerJS service to find each other; no account or server). So:
 - keep the game open on the room creator's device during a match;
 - if a friend drops out, a computer takes over their top; if the room creator leaves, the room closes;
-- some school or office Wi-Fi blocks direct connections, so friends on those networks may not be able to join.
+- mobile data and many school or office Wi-Fi networks block direct connections. Then the game's messages go through a **relay** (Metered.ca), if the game has a relay key. Without one, friends on those networks can't join; the same Wi-Fi (or one phone's hotspot) still works.
+
+### Turning on the relay (Metered.ca)
+
+1. Sign up at metered.ca (free plan) and create an app. Its address looks like `your-app.metered.live`.
+2. In the Metered dashboard, open the app's **TURN credentials** and copy the **API key**.
+3. Put both into `src/relay.js`:
+   ```js
+   export const RELAY = { app: 'your-app', apiKey: 'the key' };
+   ```
+   This key is made to sit in a web page: it can only fetch relay passes for your app.
+4. Deploy. To check the relay on its own, open the game with `?relay=only` on both devices: every connection then has to go through the relay.
+
+If the relay can't be reached, the game falls back to direct connections. Relay traffic counts against the Metered plan's monthly allowance, and only games that can't connect directly use it.
 
 ## School Tournament
 
@@ -144,7 +157,7 @@ Brand names are plain part names only. The erasers and pencils are drawn from sc
 | `src/finisher.js`, `src/announcer.js` | FINISH IT! sequences; announcer lines |
 | `src/tournament.js`, `src/economy.js` | School Tournament ladder; coins and the shop |
 | `src/input.js` | Touch / mouse / keyboard → per-player intents |
-| `src/room.js`, `src/net.js`, `src/online.js` | Friends rooms and codes; PeerJS connections + heartbeat; snapshots and smoothing |
+| `src/room.js`, `src/net.js`, `src/relay.js`, `src/online.js` | Friends rooms and codes; PeerJS connections + heartbeat; relay (Metered TURN) settings; snapshots and smoothing |
 | `src/twistpad.js` | The phone twist pad: two stacked grips pulled apart and held to charge |
 | `src/layout.js` | Screen ↔ arena mapping and where the health bars go |
 | `src/render.js` | Tops, effects (trails, shockwaves, lead-snap slow-mo), launch, banners |

@@ -114,3 +114,37 @@ test('a guest notices a host that vanished', async () => {
   assert.equal(hostGone, true);
   g.close();
 });
+
+test('connection settings (relay servers) reach PeerJS for the host and the guest', async () => {
+  const net = createFakeNetwork();
+  const rtc = { iceServers: [{ urls: 'turn:relay.example:80', username: 'u', credential: 'c' }] };
+  const host = await hostRoom('GGGG', net, { rtc });
+  const g = await joinRoom('GGGG', net, { rtc });
+  assert.deepEqual(net.options(host.peerId).config, rtc);
+  assert.deepEqual(net.options(g.peerId).config, rtc);
+  host.close();
+  g.close();
+});
+
+test('with no settings given, PeerJS keeps its own defaults', async () => {
+  const net = createFakeNetwork();
+  const host = await hostRoom('HHHH', net);
+  assert.equal(net.options(host.peerId).config, undefined);
+  host.close();
+});
+
+test('when the online service cannot be reached, creating and joining fail with offline', async () => {
+  for (const offline of ['silent', 'error']) {
+    const net = createFakeNetwork({ offline });
+    await assert.rejects(hostRoom('JJJJ', net, { connectTimeout: 40 }), /offline/, offline);
+    await assert.rejects(joinRoom('JJJJ', net, { connectTimeout: 40 }), /offline/, offline);
+  }
+});
+
+test('a room that exists but cannot be linked to fails with connect-failed', async () => {
+  const net = createFakeNetwork();
+  const host = await hostRoom('KKKK', net);
+  net.block();
+  await assert.rejects(joinRoom('KKKK', net, { connectTimeout: 40 }), /connect-failed/);
+  host.close();
+});

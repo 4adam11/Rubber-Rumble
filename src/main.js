@@ -26,6 +26,7 @@ import {
   startRoom, reopenRoom,
 } from './room.js';
 import { loadPeer, hostRoom, joinRoom } from './net.js';
+import { rtcConfig, hasRelay } from './relay.js';
 import {
   SNAP_HZ, INTENT_HZ, LAUNCH_HZ, packWorld, createMirror, pushSnapshot, interpolate, launchView, mergeRemoteLaunch,
   launchDeadline, finishLaunchNow, cleanIntent, cleanLaunchResult,
@@ -852,12 +853,19 @@ function back() {
 
 // ---------- Play with Friends ----------
 const pendingCode = (() => { try { return new URLSearchParams(location.search).get('room') || ''; } catch { return ''; } })();
+// ?relay=only sends every friends connection through the relay: a test of what mobile data gets.
+const relayOnly = (() => { try { return new URLSearchParams(location.search).get('relay') === 'only'; } catch { return false; } })();
+// PeerJS plus the connection settings (with relay servers when the game has a relay key).
+const goOnline = () => Promise.all([loadPeer(), rtcConfig({ relayOnly })]);
 const validParts = (p) => p && ERASERS.some((e) => e.id === p.eraserId) && LEADS.some((l) => l.id === p.leadId);
 const cleanSkin = (k) => (k && typeof k.sleeve === 'string' && typeof k.pencil === 'string'
   ? { sleeve: k.sleeve.slice(0, 24), pencil: k.pencil.slice(0, 24) } : null);
 const NET_ERRORS = {
   'no-room': 'No room with that code. Check it with your friend.',
-  'connect-failed': "Couldn't connect. Check your internet; some school or office Wi-Fi blocks this.",
+  offline: "Couldn't reach the online service. Check your internet connection and try again.",
+  'connect-failed': "Found the room but couldn't link to it. Try again in a moment.",
+  // the same, when the game has no relay to fall back on
+  blocked: "Found the room but couldn't link your devices: mobile data and some Wi-Fi block this. Join the same Wi-Fi (or one phone's hotspot) and try again.",
   'load-failed': "Couldn't load the online part of the game. Check your internet.",
   full: 'That room is full (4 players).',
   started: 'That battle has already started. Ask the host to go back to the lobby.',
@@ -878,20 +886,20 @@ async function createRoomAction(v) {
   const name = saveNick(v?.name);
   ui.show('friends', { name, busy: 'Creating your room…' });
   try {
-    const P = await loadPeer();
+    const [P, rtc] = await goOnline();
     let link = null, code = null;
     for (let k = 0; k < 6 && !link; k++) {
       code = makeCode();
-      try { link = await hostRoom(code, P); } catch (e) { if (e.message !== 'code-taken') throw e; }
+      try { link = await hostRoom(code, P, { rtc }); } catch (e) { if (e.message !== 'code-taken') throw e; }
     }
-    if (!link) throw new Error('connect-failed');
+    if (!link) throw new Error('offline');
     let room = createRoom(code, name);
     room = setSeat(room, 0, { skin: mySkin(), parts: { ...settings.lastParts[0] }, ability: settings.lastAbility[0] });
     friends = { role: 'host', link, room, me: 0, code };
     wireHost(link);
     showLobby();
   } catch (e) {
-    ui.show('friends', { name, error: NET_ERRORS[e.message] || NET_ERRORS['connect-failed'] });
+    ui.show('friends', { name, error: NET_ERRORS[e.message] || NET_ERRORS.offline });
   }
 }
 
@@ -900,14 +908,17 @@ async function joinRoomAction(v) {
   const code = parseCode(v?.code);
   if (!code) { ui.show('friends', { name, code: v?.code, error: "That code doesn't look right. It's like RR-7K2Q." }); return; }
   ui.show('friends', { name, code: `RR-${code}`, busy: 'Joining…' });
+  let rtc = null;
   try {
-    const P = await loadPeer();
-    const link = await joinRoom(code, P);
+    const [P, cfg] = await goOnline();
+    rtc = cfg;
+    const link = await joinRoom(code, P, { rtc });
     friends = { role: 'guest', link, room: null, me: -1, code };
     wireGuest(link);
     link.send({ t: 'hello', name, skin: mySkin() });
   } catch (e) {
-    ui.show('friends', { name, code: `RR-${code}`, error: NET_ERRORS[e.message] || NET_ERRORS['connect-failed'] });
+    const why = e.message === 'connect-failed' && !hasRelay(rtc) ? 'blocked' : e.message;
+    ui.show('friends', { name, code: `RR-${code}`, error: NET_ERRORS[why] || NET_ERRORS.offline });
   }
 }
 

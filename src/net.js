@@ -48,11 +48,15 @@ function emitter() {
 }
 
 const errType = (e) => e?.type || e?.message || 'error';
+// Errors that mean the PeerJS service itself couldn't be reached (no internet, or it's blocked).
+const OFFLINE_ERRORS = new Set(['network', 'server-error', 'socket-error', 'socket-closed']);
+// `rtc` is the WebRTC settings (STUN and relay servers, see relay.js); without it PeerJS uses its own.
+const peerOptions = (rtc) => (rtc ? { debug: 0, config: rtc } : { debug: 0 });
 
-// Host a room. Resolves with a link once the code is registered; rejects 'code-taken' or 'connect-failed'.
-export function hostRoom(code, { Peer }, { beat = BEAT, timeout = SILENCE } = {}) {
+// Host a room. Resolves with a link once the code is registered; rejects 'code-taken' or 'offline'.
+export function hostRoom(code, { Peer }, { beat = BEAT, timeout = SILENCE, rtc, connectTimeout = CONNECT_TIMEOUT } = {}) {
   return new Promise((resolve, reject) => {
-    const peer = new Peer(PEER_PREFIX + code, { debug: 0 });
+    const peer = new Peer(PEER_PREFIX + code, peerOptions(rtc));
     const conns = new Map();
     const heard = new Map(), leaves = new Map();
     const pulse = setInterval(() => {
@@ -65,6 +69,15 @@ export function hostRoom(code, { Peer }, { beat = BEAT, timeout = SILENCE } = {}
     pulse.unref?.(); // never keep a test run (Node) alive just for heartbeats
     const msgs = emitter(), events = emitter();
     let opened = false;
+    const fail = (why) => {
+      if (opened) return;
+      opened = true; // settled: nothing more to report
+      clearInterval(pulse);
+      clearTimeout(timer);
+      try { peer.destroy(); } catch { /* */ }
+      reject(new Error(why));
+    };
+    const timer = setTimeout(() => fail('offline'), connectTimeout);
     const link = {
       role: 'host', code, peerId: PEER_PREFIX + code,
       send(to, msg) {
@@ -79,10 +92,10 @@ export function hostRoom(code, { Peer }, { beat = BEAT, timeout = SILENCE } = {}
       onError: (fn) => events.on('error', fn),
       close() { clearInterval(pulse); try { peer.destroy(); } catch { /* already gone */ } },
     };
-    peer.on('open', () => { opened = true; resolve(link); });
+    peer.on('open', () => { if (opened) return; opened = true; clearTimeout(timer); resolve(link); });
     peer.on('error', (e) => {
       const type = errType(e);
-      if (!opened) { clearInterval(pulse); reject(new Error(type === 'unavailable-id' ? 'code-taken' : 'connect-failed')); }
+      if (!opened) fail(type === 'unavailable-id' ? 'code-taken' : 'offline');
       else events.emit('error', type);
     });
     peer.on('connection', (conn) => {
@@ -108,15 +121,16 @@ export function hostRoom(code, { Peer }, { beat = BEAT, timeout = SILENCE } = {}
   });
 }
 
-// Join a friend's room. Rejects 'no-room' when nobody hosts that code, or 'connect-failed'.
-export function joinRoom(code, { Peer }, { protocol = PROTOCOL, beat = BEAT, timeout = SILENCE } = {}) {
+// Join a friend's room. Rejects 'no-room' when nobody hosts that code, 'offline' when the PeerJS
+// service can't be reached, or 'connect-failed' when the room was found but the devices couldn't link
+// (a network blocking direct connections, with no working relay).
+export function joinRoom(code, { Peer }, { protocol = PROTOCOL, beat = BEAT, timeout = SILENCE, rtc, connectTimeout = CONNECT_TIMEOUT } = {}) {
   return new Promise((resolve, reject) => {
-    const peer = new Peer(undefined, { debug: 0 });
+    const peer = new Peer(undefined, peerOptions(rtc));
     const msgs = emitter(), events = emitter();
-    let settled = false, conn = null, gone = false, heard = Date.now(), pulse = null;
-    const fail = (why) => { if (settled) return; settled = true; try { peer.destroy(); } catch { /* */ } reject(new Error(why)); };
-    const timer = setTimeout(() => fail('connect-failed'), CONNECT_TIMEOUT);
-    timer.unref?.();
+    let settled = false, conn = null, gone = false, heard = Date.now(), pulse = null, online = false;
+    const fail = (why) => { if (settled) return; settled = true; clearTimeout(timer); try { peer.destroy(); } catch { /* */ } reject(new Error(why)); };
+    const timer = setTimeout(() => fail(online ? 'connect-failed' : 'offline'), connectTimeout);
     const link = {
       role: 'guest', code,
       get peerId() { return peer.id; },
@@ -127,6 +141,7 @@ export function joinRoom(code, { Peer }, { protocol = PROTOCOL, beat = BEAT, tim
     };
     const leave = () => { if (gone || !settled) return; gone = true; clearInterval(pulse); events.emit('leave'); };
     peer.on('open', () => {
+      online = true;
       conn = peer.connect(PEER_PREFIX + String(code).toUpperCase(), { reliable: true, serialization: 'json' });
       conn.on('open', () => {
         if (settled) return;
@@ -149,17 +164,19 @@ export function joinRoom(code, { Peer }, { protocol = PROTOCOL, beat = BEAT, tim
       conn.on('error', leave);
     });
     peer.on('error', (e) => {
-      if (!settled) { clearTimeout(timer); fail(errType(e) === 'peer-unavailable' ? 'no-room' : 'connect-failed'); }
-      else if (errType(e) !== 'peer-unavailable') leave();
+      const type = errType(e);
+      if (!settled) fail(type === 'peer-unavailable' ? 'no-room' : !online && OFFLINE_ERRORS.has(type) ? 'offline' : 'connect-failed');
+      else if (type !== 'peer-unavailable') leave();
     });
     peer.on('disconnected', () => { /* lost the broker only; the direct link may still be fine */ });
   });
 }
 
 // ---------- in-memory stand-in for tests ----------
-export function createFakeNetwork() {
-  const peers = new Map();
-  let n = 0;
+// offline: 'silent' (the service never answers) or 'error' (it fails with a network error).
+export function createFakeNetwork({ offline = null } = {}) {
+  const peers = new Map(), options = new Map();
+  let n = 0, blocked = false;
   const later = (fn) => setTimeout(fn, 0);
 
   class FakeConn {
@@ -178,11 +195,14 @@ export function createFakeNetwork() {
   }
 
   class FakePeer {
-    constructor(id) {
+    constructor(id, opts) {
       this.id = id || `guest-${++n}`;
       this.conns = [];
+      options.set(this.id, opts || {});
       const e = emitter(); this.on = e.on; this.emit = e.emit;
       later(() => {
+        if (offline === 'silent') return;
+        if (offline === 'error') { this.emit('error', { type: 'network' }); return; }
         if (peers.has(this.id)) { this.emit('error', { type: 'unavailable-id' }); return; }
         peers.set(this.id, this);
         this.emit('open', this.id);
@@ -198,6 +218,7 @@ export function createFakeNetwork() {
         target.conns.push(theirs);
         mine.other = theirs; theirs.other = mine;
         target.emit('connection', theirs);
+        if (blocked) return; // the networks won't let the two devices link
         later(() => { mine.open = theirs.open = true; theirs.emit('open'); mine.emit('open'); });
       });
       return mine;
@@ -209,6 +230,10 @@ export function createFakeNetwork() {
   }
   return {
     Peer: FakePeer,
+    // what the game passed to PeerJS for this peer id
+    options: (id) => options.get(id),
+    // from now on, devices find each other but can't link (like mobile data with no relay)
+    block() { blocked = true; },
     // the tab disappears: nothing more is sent or received, and nobody is told
     vanish(id) {
       const p = peers.get(id);
