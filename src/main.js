@@ -15,6 +15,7 @@ import { ABILITIES, ABILITY_IDS, UNLOCK_AT } from './abilities.js';
 import { ARENAS, ARENA_IDS } from './arenas.js';
 import { INTRO_SECONDS } from './intro.js';
 import { lineFor } from './announcer.js';
+import { RUNGS, MODIFIERS, advance, bossSpec } from './tournament.js';
 import { FINISHERS, makeSequence, createFinishInput, pickFinisher, cpuFinishes } from './finisher.js';
 
 const canvas = document.getElementById('game');
@@ -57,7 +58,9 @@ const ui = createUI(document.getElementById('screens'), { action: onAction, clic
 
 // ---------- match / rounds ----------
 const isDemo = () => game?.config.mode === 'demo';
-const isCpu = (i) => game.config.mode === 'demo' || (game.config.mode === 'cpu' && i === 1);
+const vsCpu = () => game.config.mode === 'cpu' || game.config.mode === 'tournament';
+const isCpu = (i) => game.config.mode === 'demo' || (vsCpu() && i === 1);
+const rungOf = () => (game?.config.mode === 'tournament' ? RUNGS[game.config.rung] : null);
 const inPlay = () => game && !isDemo() && (game.phase === 'launch' || game.phase === 'battle');
 
 function startMatch(config) {
@@ -66,7 +69,10 @@ function startMatch(config) {
   renderer.hud.reset();
   game = {
     config,
-    specs: config.parts.map((p) => buildTop(p.eraserId, p.leadId)),
+    specs: config.parts.map((p, i) => {
+      const spec = buildTop(p.eraserId, p.leadId);
+      return config.boss && i === 1 ? bossSpec(spec) : spec;
+    }),
     match: createMatch(),
     round: 0,
     phase: 'idle',
@@ -97,10 +103,10 @@ function introData() {
       color: PLAYER_COLORS[i],
       eraserId: g.specs[i].eraserId,
       leadId: g.specs[i].leadId,
-      subtitle: g.specs[i].combo ? `★ ${g.specs[i].combo.name}` : `${g.specs[i].eraserName} + ${g.specs[i].leadName}`,
+      subtitle: rungOf() && i === 1 ? `“${rungOf().taunt}”` : g.specs[i].combo ? `★ ${g.specs[i].combo.name}` : `${g.specs[i].eraserName} + ${g.specs[i].leadName}`,
       ability: g.config.abilities[i],
     })),
-    round: 'Round 1',
+    round: rungOf() ? `Rung ${g.config.rung + 1}: ${rungOf().title}` : 'Round 1',
     arenaName: ARENAS[g.config.arena].name,
     arenaLevel: ARENAS[g.config.arena].level,
   };
@@ -129,7 +135,8 @@ function startRound() {
   ui.show('hud');
   const done = g.match.state().rounds;
   const label = roundLabel(done, done.length);
-  renderer.banner(label, { sub: coarse ? 'Drag your top to a spot on the rim' : 'Place your top on the rim', size: 54, life: 1.3 });
+  const twist = rungOf()?.modifier ? MODIFIERS[rungOf().modifier] : null;
+  renderer.banner(label, { sub: twist ? `${twist.icon} ${twist.name}: ${twist.desc}` : coarse ? 'Drag your top to a spot on the rim' : 'Place your top on the rim', size: 54, life: twist ? 2 : 1.3 });
   g.taken = [0, 0]; // damage taken this round, for Flawless
   g.saidTwist = false;
   audio.boom();
@@ -187,7 +194,7 @@ function startBattle() {
   g.timer = 0;
   g.acc = 0;
   g.world = createWorld(g.specs, g.launches.map((s) => s.result), Math.random, {
-    abilities: g.config.abilities, arena: ARENAS[g.config.arena],
+    abilities: g.config.abilities, arena: ARENAS[g.config.arena], mods: g.config.mods || null,
   });
   if (isDemo()) return;
   input.setPhase('battle');
@@ -221,6 +228,7 @@ function stepBattle(dt) {
       else if (e.type === 'special') { audio.special(); buzz(25); }
       else if (e.type === 'unlock') { audio.perfect(); if (!isCpu(e.i)) { buzz([30, 40, 30]); audio.say(lineFor('unlock'), { rate: 1.1 }); } }
       else if (e.type === 'block' || e.type === 'bump') audio.clack(1);
+      else if (e.type === 'quake') { audio.boom(); buzz(120); }
     }
     w.tops.forEach((t, i) => audio.hum(i, w.over ? 0 : t.rpm / t.spec.maxRPM));
     if (w.clash) audio.grind(true);
@@ -249,6 +257,7 @@ const REASON = {
 const SHORT = { stopped: 'Spin Finish', tipped: 'Tip Finish', ringout: 'Knock-Out', time: 'Spin Finish', snapko: 'Snap KO' };
 
 function playerName(i) {
+  if (game.config.mode === 'tournament') return i === 0 ? 'You' : RUNGS[game.config.rung].name;
   if (game.config.mode === 'cpu') return i === 0 ? 'You' : 'CPU';
   return `Player ${i + 1}`;
 }
@@ -259,7 +268,7 @@ function describe(result) {
   return `${playerName(1 - result.winner)} ${REASON[result.reason]}`;
 }
 
-function winsWord(i) { return game.config.mode === 'cpu' && i === 0 ? 'win' : 'wins'; }
+function winsWord(i) { return vsCpu() && i === 0 ? 'win' : 'wins'; }
 
 function endRound(result) {
   const g = game;
@@ -294,12 +303,13 @@ function showResult() {
   if (st.over) {
     if (!g.endSoundPlayed) { // not again when coming Back from Change parts
       g.endSoundPlayed = true;
-      const youLost = g.config.mode === 'cpu' && st.winner === 1;
+      const youLost = vsCpu() && st.winner === 1;
       youLost ? audio.lose() : audio.win();
       setTimeout(() => audio.say(lineFor('match', { name: names[st.winner] })), 500);
     }
     ui.show('match', {
-      headline: g.config.mode === 'cpu' ? (st.winner === 0 ? 'You win the match!' : 'CPU wins the match') : `Player ${st.winner + 1} wins!`,
+      headline: vsCpu() ? (st.winner === 0 ? 'You win the match!' : `${names[1]} wins the match`) : `Player ${st.winner + 1} wins!`,
+      ...tournamentResult(st),
       color: PLAYER_COLORS[st.winner], names, wins: st.points,
       extra: g.rubberality ? `💥 Finished with a Rubberality: ${FINISHERS[g.finish.finisher].name}!` : '',
       rounds: st.rounds.map((x, k) => `${roundLabel(st.rounds, k)}: ${x.winner === null ? 'draw' : `${names[x.winner]} · ${SHORT[x.reason]} +${x.points}`}`),
@@ -408,13 +418,48 @@ function showTitle() {
   ui.show('title', { muted: settings.muted });
 }
 
+// ---------- School Tournament ----------
+function showLadder() {
+  paused = false;
+  audio.silence();
+  if (!game || !isDemo()) startDemo();
+  ui.show('ladder', { progress: settings.tournament });
+}
+
+function tournamentResult(st) {
+  const g = game;
+  if (g.config.mode !== 'tournament') return {};
+  const won = st.winner === 0;
+  if (!g.ladderSaved) { // move up the ladder once per match
+    g.ladderSaved = true;
+    if (g.config.rung === settings.tournament.rung) settings.tournament = advance(settings.tournament, won);
+    saveSettings(settings);
+  }
+  const champ = won && g.config.rung === RUNGS.length - 1;
+  const next = RUNGS[g.config.rung + 1];
+  const buttons = won
+    ? [
+      { action: 'ladder', label: champ ? '🏆 You are School Champion!' : `Next: ${next.name} ▶`, primary: true },
+      { action: 'menu', label: 'Main menu' },
+    ]
+    : [
+      { action: 'rematch', label: 'Try again', primary: true },
+      { action: 'change-parts', label: 'Change parts' },
+      { action: 'ladder', label: 'Back to the ladder' },
+    ];
+  return { buttons, kicker: `School Tournament · ${RUNGS[g.config.rung].title}` };
+}
+
 function who(player) { return session.mode === '2p' ? `Player ${player + 1},` : 'You,'; }
 
 function openPicker(player) {
   session.picking = player;
   const parts = session.parts?.[player] || settings.lastParts[player];
   let note = '';
-  if (session.mode === 'cpu') {
+  if (session.mode === 'tournament') {
+    const r = RUNGS[session.rung];
+    note = `Next up: ${r.name} — “${r.taunt}”`;
+  } else if (session.mode === 'cpu') {
     note = `Versus the computer (${session.difficulty}).`;
     if (session.difficulty === 'hard') note += ' It will counter-pick whatever you build.';
   } else if (player === 1) note = 'Player 1 is ready. Player 2, your turn!';
@@ -448,6 +493,7 @@ function abilityReady(player, ability) {
   saveSettings(settings);
   if (session.mode === '2p' && player === 0) { openPicker(1); return; }
   if (session.changing && game && !isDemo()) { applyChanges(); return; }
+  if (session.mode === 'tournament') { beginMatch(); return; } // each rung has its own arena
   ui.show('arena', { selected: session.arena || settings.lastArena });
 }
 
@@ -476,6 +522,15 @@ function beginMatch() {
   const p0 = session.parts[0];
   let p1 = session.parts[1];
   const abilities = [session.abilities[0], session.abilities[1]];
+  if (session.mode === 'tournament') {
+    const r = RUNGS[session.rung];
+    startMatch({
+      mode: 'tournament', rung: session.rung, difficulty: r.difficulty, parts: [{ ...p0 }, { ...r.parts }],
+      abilities: [session.abilities[0], r.ability], arena: r.arena,
+      mods: r.modifier ? MODIFIERS[r.modifier].mods : null, boss: !!r.boss,
+    });
+    return;
+  }
   if (session.mode === 'cpu') {
     const mine = buildTop(p0.eraserId, p0.leadId);
     p1 = session.difficulty === 'hard' ? pickCombo('hard', mine) : pickCombo(session.difficulty, null);
@@ -508,6 +563,13 @@ function onAction(action, value) {
   switch (action) {
     case 'play-cpu': session = { mode: 'cpu' }; ui.show('difficulty'); break;
     case 'play-2p': session = { mode: '2p' }; openPicker(0); break;
+    case 'tournament': session = { mode: 'tournament' }; showLadder(); break;
+    case 'ladder': session = { mode: 'tournament', parts: session?.parts, abilities: session?.abilities }; showLadder(); break;
+    case 'fight-rung':
+      session.rung = Number(value);
+      session.difficulty = RUNGS[session.rung].difficulty;
+      openPicker(0);
+      break;
     case 'difficulty': session.difficulty = value; openPicker(0); break;
     case 'howto': ui.show('howto'); break;
     case 'toggle-sound':
@@ -535,13 +597,14 @@ function onAction(action, value) {
 
 function back() {
   const screen = ui.current;
-  if (screen === 'howto' || screen === 'difficulty') { showTitle(); return; }
+  if (screen === 'howto' || screen === 'difficulty' || screen === 'ladder') { showTitle(); return; }
   if (screen === 'ability') { openPicker(session.picking); return; }
   if (screen === 'arena') { openAbility(session.mode === '2p' ? 1 : 0); return; }
   if (screen === 'picker') {
     if (session.picking === 1) { openAbility(0); return; }
     if (session.changing) { session.changing = null; game.resultShown = false; showResult(); return; }
     if (session.mode === 'cpu') { ui.show('difficulty'); return; }
+    if (session.mode === 'tournament') { showLadder(); return; }
     showTitle();
   }
 }
@@ -557,7 +620,7 @@ function hints(i) {
   }
   if (s.phase === 'twist') {
     if (coarse) return 'Flick 2 thumbs! First flick sets the spin';
-    if (game.config.mode === 'cpu') return `Mash ${keys[0]}↔${keys[1]} · start on ${keys[1]} for ↻, ${keys[0]} for ↺ · ${keys[2]} to let go`;
+    if (vsCpu()) return `Mash ${keys[0]}↔${keys[1]} · start on ${keys[1]} for ↻, ${keys[0]} for ↺ · ${keys[2]} to let go`;
     return `Mash ${keys[0]}↔${keys[1]}! ${keys[2]} to let go`;
   }
   return s.result?.perfect ? 'PERFECT!' : 'Released';

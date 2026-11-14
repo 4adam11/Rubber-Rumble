@@ -171,6 +171,9 @@ export function createRenderer(canvas) {
           cam.target = 1.18; cam.fx = p.x; cam.fy = p.y; cam.hold = 0.55;
         }
         slowmo(0.3, 0.6);
+      } else if (e.type === 'quake') {
+        if (!reducedMotion()) shake = Math.max(shake, 12);
+        banner('EARTHQUAKE!', { x: L.width / 2, y: L.hud === 'top' ? 120 : 60, color: '#8a5a00', size: 30, life: 1 });
       } else if (e.type === 'clashStart') {
         const p = arenaToScreen(L, e.x, e.y);
         sparks(p.x, p.y, 24, '#ffe7a3');

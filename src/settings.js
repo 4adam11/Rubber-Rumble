@@ -2,6 +2,7 @@
 import { ERASERS, LEADS } from './parts.js';
 import { ABILITY_IDS } from './abilities.js';
 import { ARENA_IDS } from './arenas.js';
+import { RUNGS } from './tournament.js';
 
 const KEY = 'rubber-rumble:v1';
 const DEFAULT_PARTS = { eraserId: 'apsara-nondust', leadId: 'nataraj-hb' };
@@ -12,6 +13,7 @@ export function defaultSettings() {
     lastParts: [{ ...DEFAULT_PARTS }, { eraserId: 'doms-cubo', leadId: 'doms-y1' }],
     lastAbility: ['secondWind', 'dash'],
     lastArena: 'thali',
+    tournament: { rung: 0, champion: false },
   };
 }
 
@@ -32,6 +34,10 @@ export function loadSettings() {
         raw.lastAbility.slice(0, 2).forEach((a, i) => { if (ABILITY_IDS.includes(a)) s.lastAbility[i] = a; });
       }
       if (ARENA_IDS.includes(raw.lastArena)) s.lastArena = raw.lastArena;
+      const t = raw.tournament;
+      if (t && Number.isInteger(t.rung) && t.rung >= 0 && t.rung < RUNGS.length) {
+        s.tournament = { rung: t.rung, champion: !!t.champion };
+      }
     }
   } catch { /* storage blocked or corrupt: defaults */ }
   return s;

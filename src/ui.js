@@ -5,6 +5,7 @@ import { ABILITIES, ABILITY_IDS } from './abilities.js';
 import { ARENAS, ARENA_IDS } from './arenas.js';
 import { paintArenaThumb } from './arena-art.js';
 import { DEMOS, drawDemo } from './demos.js';
+import { RUNGS, MODIFIERS } from './tournament.js';
 
 const ARCH = { attack: 'Attack', defense: 'Defense', stamina: 'Stamina', balance: 'Balance', wildcard: 'Wildcard' };
 const STATS = [['attack', 'Attack'], ['defense', 'Defense'], ['stamina', 'Stamina'], ['balance', 'Balance'], ['speed', 'Speed']];
@@ -96,6 +97,7 @@ export function createUI(root, handlers, opts = {}) {
         <p class="tagline">Eraser top. Pencil-lead tip. One steel thali. Last one spinning wins.</p>
         <div class="stack">
           <button class="btn btn-primary" data-action="play-cpu">Play vs Computer</button>
+          <button class="btn btn-tourney" data-action="tournament">🏆 School Tournament</button>
           <button class="btn" data-action="play-2p">2 Players · same device</button>
           <button class="btn btn-ghost" data-action="howto">How to play</button>
         </div>
@@ -347,6 +349,40 @@ export function createUI(root, handlers, opts = {}) {
       </div>`, 'with-backdrop');
   }
 
+  // School Tournament ladder: the Principal at the top, the Class Bully at the bottom
+  function ladder(d) {
+    const p = d.progress || { rung: 0, champion: false };
+    const DIFF_LABEL = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
+    mount('ladder', `
+      <div class="sheet sheet-ladder">
+        <h2>🏆 School Tournament</h2>
+        <p class="note">${p.champion ? 'You are the School Champion! Replay any rung.' : 'Beat all five to become School Champion. Your progress is saved.'}</p>
+        <ol class="rungs">
+          ${RUNGS.map((r, i) => ({ r, i })).reverse().map(({ r, i }) => {
+            const beaten = p.champion || i < p.rung;
+            const current = !p.champion && i === p.rung;
+            const locked = !beaten && !current;
+            const mod = r.modifier ? MODIFIERS[r.modifier] : null;
+            const state = beaten ? 'beaten' : current ? 'current' : 'locked';
+            return `<li class="rung rung-${state} ${r.boss ? 'rung-boss' : ''}">
+              <img src="${eraserThumb(r.parts.eraserId)}" alt="" width="150" height="100">
+              <div class="rung-text">
+                <b>${i + 1}. ${esc(r.name)}</b>
+                <small>${esc(r.title)} · ${DIFF_LABEL[r.difficulty]}</small>
+                ${mod ? `<span class="rung-mod">${mod.icon} ${esc(mod.name)}</span>` : ''}
+              </div>
+              ${locked ? '<span class="rung-lock">🔒</span>'
+                : `<button class="btn ${current ? 'btn-primary' : ''} rung-go" data-action="fight-rung" data-value="${i}">${current ? 'Fight!' : 'Replay'}</button>`}
+              ${beaten ? '<span class="rung-stamp">BEATEN</span>' : ''}
+            </li>`;
+          }).join('')}
+        </ol>
+        <div class="row">
+          <button class="btn btn-ghost" data-action="back">← Back</button>
+        </div>
+      </div>`, 'with-backdrop');
+  }
+
   function introScreen() {
     mount('intro', `<button class="skip-area" data-action="skip-intro" aria-label="Skip intro"></button><span class="skip-intro">Tap to skip ›</span>`, 'intro');
   }
@@ -367,15 +403,16 @@ export function createUI(root, handlers, opts = {}) {
   function matchResult(d) {
     mount('match', `
       <div class="sheet sheet-small">
-        <p class="kicker">Match over</p>
+        <p class="kicker">${esc(d.kicker || 'Match over')}</p>
         <h2 class="big" style="color:${d.color}">${esc(d.headline)}</h2>
         ${d.extra ? `<p class="sub extra">${esc(d.extra)}</p>` : ''}
         <p class="score">${esc(d.names[0])} <b>${d.wins[0]}</b> – <b>${d.wins[1]}</b> ${esc(d.names[1])}</p>
         <ul class="rounds">${d.rounds.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
         <div class="stack">
+          ${d.buttons ? d.buttons.map((b, k) => `<button class="btn ${b.primary ? 'btn-primary' : k === d.buttons.length - 1 ? 'btn-ghost' : ''}" data-action="${b.action}" ${b.primary ? 'autofocus' : ''}>${esc(b.label)}</button>`).join('') : `
           <button class="btn btn-primary" data-action="rematch" autofocus>Rematch</button>
           <button class="btn" data-action="change-parts">Change parts</button>
-          <button class="btn btn-ghost" data-action="menu">Main menu</button>
+          <button class="btn btn-ghost" data-action="menu">Main menu</button>`}
         </div>
       </div>`, 'with-backdrop');
   }
@@ -459,7 +496,7 @@ export function createUI(root, handlers, opts = {}) {
   return {
     show(name, data = {}) {
       if (name === 'picker') { picker = { ...data }; renderPicker(); return; }
-      ({ title, difficulty, round: roundResult, match: matchResult, pause, howto, hud, ability: abilityScreen, arena: arenaScreen, intro: introScreen })[name](data);
+      ({ title, difficulty, round: roundResult, match: matchResult, pause, howto, hud, ability: abilityScreen, arena: arenaScreen, intro: introScreen, ladder })[name](data);
     },
     hide() { current = null; root.innerHTML = ''; },
     get current() { return current; },

@@ -68,6 +68,11 @@ export function createWorld(specs, launches, rng = Math.random, opts = {}) {
     bumpers: (opts.arena?.bumpers || []).map((b) => ({ ...b })),
     arena: opts.arena || null,
     clashOn: opts.clash !== false,
+    // tournament twists: oily desk (damping), ceiling fan (wind), earthquake drill (quake)
+    damping: opts.mods?.damping ?? CONST.DAMPING,
+    wind: opts.mods?.wind || null,
+    quake: opts.mods?.quake || null,
+    nextQuake: opts.mods?.quake?.every ?? Infinity,
     clash: null, contact: 0, nextClash: 0,
   };
 }
@@ -95,6 +100,8 @@ function moveTop(w, t, intent, dt, opp) {
     ay += (oy / od) * 4.0;
   }
 
+  if (w.wind) { ax += w.wind.x; ay += w.wind.y; }
+
   // Random wander, tangential to the bowl.
   const d = Math.hypot(t.x, t.y);
   const tx = d > 1e-9 ? -t.y / d : 0;
@@ -111,7 +118,7 @@ function moveTop(w, t, intent, dt, opp) {
     if (Math.hypot(t.x - z.x, t.y - z.y) < z.r + s.radius * 0.5) drag = Math.max(drag, z.drag);
   }
   if (drag) { t.vx *= Math.exp(-drag * dt); t.vy *= Math.exp(-drag * dt); t.inZone = true; } else t.inZone = false;
-  const damp = Math.exp(-CONST.DAMPING * dt);
+  const damp = Math.exp(-w.damping * dt);
   t.vx *= damp;
   t.vy *= damp;
   if (t.planted) { t.vx *= Math.exp(-6 * dt); t.vy *= Math.exp(-6 * dt); }
@@ -344,6 +351,16 @@ export function step(w, intents) {
   collide(w);
   if (w.bumpers.length) bounceOffBumpers(w);
   watchForClash(w);
+  if (w.quake && w.time >= w.nextQuake) {
+    for (const t of w.tops) {
+      const a = w.rng() * Math.PI * 2;
+      t.vx += Math.cos(a) * w.quake.strength;
+      t.vy += Math.sin(a) * w.quake.strength;
+      t.wobble += 0.05;
+    }
+    w.nextQuake = w.time + w.quake.every;
+    w.events.push({ type: 'quake' });
+  }
   w.time += dt;
 
   const reasons = w.tops.map(lossReason);

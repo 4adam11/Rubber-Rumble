@@ -539,3 +539,35 @@ kbd {
   .pg-pencil, .slot img, .cup-pencil img { transition: none; }
   .sticky.pop { animation: none; }
 }
+
+/* ---------- School Tournament ladder ---------- */
+.btn-tourney { background: linear-gradient(#fff3c4, #ffd76a); }
+.sheet-ladder { width: min(620px, 100%); }
+.rungs { list-style: none; margin: 8px 0 12px; padding: 0; display: grid; gap: 10px; }
+.rung {
+  position: relative; display: grid; grid-template-columns: 96px 1fr auto; align-items: center; gap: 12px;
+  padding: 8px 12px; border-radius: 12px; border: 2px solid rgba(31, 42, 68, 0.2);
+  background: linear-gradient(#fffdf6, #f6efdc); box-shadow: 0 2px 0 rgba(31, 42, 68, 0.15);
+}
+.rung img { width: 96px; height: auto; }
+.rung-text { display: grid; gap: 2px; min-width: 0; }
+.rung-text b { font: 700 19px var(--hand); }
+.rung-text small { color: var(--ink-soft); font-size: 12.5px; }
+.rung-mod { justify-self: start; font: 700 11.5px var(--sans); padding: 2px 8px; border-radius: 999px; background: #1f2a44; color: #fff; }
+.rung-current { border-color: var(--ink); box-shadow: 4px 4px 0 var(--ink); background: #fffbe8; }
+.rung-locked { opacity: 0.55; filter: grayscale(0.6); }
+.rung-boss { background: linear-gradient(#fff2f2, #ffe0dc); }
+.rung-boss.rung-current { box-shadow: 4px 4px 0 #b3261e; border-color: #b3261e; }
+.rung-lock { font-size: 22px; padding: 0 8px; }
+.rung-go { min-height: 44px; padding: 6px 16px; }
+.rung-stamp {
+  position: absolute; right: 108px; top: 50%; transform: translateY(-50%) rotate(-12deg);
+  font: 900 15px var(--sans); letter-spacing: 0.12em; color: #2a7a3b; border: 2.5px solid #2a7a3b; border-radius: 6px; padding: 1px 6px; opacity: 0.75;
+}
+.extra { color: #b3261e !important; }
+@media (max-width: 520px) {
+  .rung { grid-template-columns: 64px 1fr auto; gap: 8px; padding: 6px 8px; }
+  .rung img { width: 64px; }
+  .rung-text b { font-size: 16px; }
+  .rung-stamp { right: 80px; font-size: 12px; }
+}
