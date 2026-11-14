@@ -369,6 +369,7 @@ export function createUI(root, handlers, opts = {}) {
       <div class="sheet sheet-small">
         <p class="kicker">Match over</p>
         <h2 class="big" style="color:${d.color}">${esc(d.headline)}</h2>
+        ${d.extra ? `<p class="sub extra">${esc(d.extra)}</p>` : ''}
         <p class="score">${esc(d.names[0])} <b>${d.wins[0]}</b> – <b>${d.wins[1]}</b> ${esc(d.names[1])}</p>
         <ul class="rounds">${d.rounds.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
         <div class="stack">

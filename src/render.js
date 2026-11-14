@@ -1,7 +1,8 @@
 // Canvas drawing: arena, tops, effects, health bars, intro and banners.
 import { computeLayout, arenaToScreen, screenToArenaVec, THALI_OUTER } from './layout.js';
 import { LAUNCH, ringSize } from './launch.js';
-import { drawEraserTop, drawLeadTop, ERASER_ART } from './art.js';
+import { drawEraserTop, drawLeadTop, drawEraserSide, ERASER_ART } from './art.js';
+import { FINISH_SECONDS } from './finisher.js';
 import { paintDesk, paintArena, drawCrumbs } from './arena-art.js';
 import { createHud } from './hud.js';
 import { drawIntro as paintIntro } from './intro.js';
@@ -565,7 +566,12 @@ export function createRenderer(canvas) {
     drawCrumbs(ctx, L, world.zones || [], world.time);
     world.tops.forEach((t, i) => drawTrail(i, t));
     drawWaves();
-    world.tops.forEach((t, i) => drawTop(t, i, { time: world.time }));
+    const fin = frame?.finish;
+    world.tops.forEach((t, i) => {
+      if (fin && i === fin.loser) { drawFinishedTop(t, i, fin); return; }
+      drawTop(t, i, { time: world.time });
+    });
+    if (fin) drawFinisherProp(world, fin);
     if (world.clash) {
       const p = arenaToScreen(L, world.clash.x, world.clash.y);
       if (Math.random() < 0.8) sparks(p.x, p.y, 2, Math.random() < 0.5 ? '#ffe7a3' : '#ffffff');
@@ -581,6 +587,191 @@ export function createRenderer(canvas) {
     drawParticles();
     overlays(frame);
     if (world.clash) drawClashMeter(world.clash, frame);
+    if (fin) drawFinishOverlay(world, fin);
+  }
+
+  // ---------- FINISH IT! ----------
+  const ease = (x) => 1 - (1 - Math.max(0, Math.min(1, x))) ** 3;
+
+  // the beaten top: dizzy while waiting, then shredded or rubbed away
+  function drawFinishedTop(t, i, fin) {
+    const p = arenaToScreen(L, t.x, t.y);
+    const rpx = t.spec.radius * L.scale;
+    let scale = 1, alpha = 1;
+    if (fin.status === 'anim') {
+      if (fin.finisher === 'sharpener') scale = 1 - ease((fin.anim - 0.5) / 1.6);
+      else alpha = 1 - ease((fin.anim - 0.4) / 1.9);
+    }
+    if (scale <= 0.01 || alpha <= 0.01) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(p.x, p.y);
+    ctx.scale(scale, scale);
+    ctx.rotate(Math.sin(clock * 3) * 0.3);
+    ctx.translate(-p.x, -p.y);
+    drawTop({ ...t, wobble: 0.8, rpm: 0 }, i, { time: 0 });
+    ctx.restore();
+    if (fin.status === 'input') { // dizzy stars
+      ctx.font = `700 ${Math.max(14, rpx * 0.6)}px system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (let k = 0; k < 3; k++) {
+        const a = clock * 4 + (k * Math.PI * 2) / 3;
+        ctx.fillStyle = '#ffd23f';
+        ctx.fillText('★', p.x + Math.cos(a) * rpx * 1.2, p.y - rpx * 1.5 + Math.sin(a) * rpx * 0.4);
+      }
+    }
+  }
+
+  function drawGiantSharpener(x, y, size) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(0.12);
+    const w = size, h = size * 0.78;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(-w / 2 + 10, -h / 2 + 14, w, h);
+    ctx.fillStyle = '#d63a2f';
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(-w / 2, -h / 2, w, h, size * 0.12) : ctx.rect(-w / 2, -h / 2, w, h);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.fillRect(-w / 2 + 6, -h / 2 + 6, w - 12, h * 0.2);
+    const blade = ctx.createLinearGradient(-w * 0.35, 0, w * 0.35, 0);
+    blade.addColorStop(0, '#9aa3ad'); blade.addColorStop(0.5, '#f4f6f8'); blade.addColorStop(1, '#8a939d');
+    ctx.fillStyle = blade;
+    ctx.fillRect(-w * 0.38, -h * 0.05, w * 0.76, h * 0.38);
+    ctx.beginPath();
+    ctx.arc(-w * 0.24, h * 0.14, size * 0.05, 0, Math.PI * 2);
+    ctx.fillStyle = '#5b636c';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(w * 0.18, -h * 0.26, size * 0.09, 0, Math.PI * 2);
+    ctx.fillStyle = '#2a1712';
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawFinisherProp(world, fin) {
+    if (fin.status !== 'anim') return;
+    const loser = world.tops[fin.loser];
+    const p = arenaToScreen(L, loser.x, loser.y);
+    const rpx = loser.spec.radius * L.scale;
+    const t = fin.anim;
+    if (fin.finisher === 'sharpener') {
+      const size = rpx * 5;
+      let y;
+      if (t < 0.5) y = -size + (p.y - rpx * 0.6 + size) * ease(t / 0.5);
+      else if (t < 2.2) y = p.y - rpx * 0.6 + Math.sin(t * 60) * 3;
+      else y = p.y - rpx * 0.6 - (p.y + size) * ease((t - 2.2) / 0.6);
+      if (t > 0.5 && t < 2.2) {
+        if (!reducedMotion()) shake = Math.max(shake, 6);
+        if (Math.random() < 0.9) { // spiral shavings fly out
+          const a = clock * 12;
+          particles.push({ kind: 'shaving', x: p.x, y: p.y, vx: Math.cos(a) * rand(160, 360), vy: Math.sin(a) * rand(160, 360), life: rand(0.5, 0.9), rot: a, vr: rand(-12, 12), size: rand(7, 14), paint: PAINT[Math.floor(Math.random() * PAINT.length)] });
+        }
+      }
+      drawGiantSharpener(p.x, y, size);
+    } else {
+      const winner = world.tops[fin.winner];
+      const width = rpx * 6;
+      if (t > 0.2 && t < 2.6) {
+        const sweep = Math.sin((t - 0.2) * 9) * rpx * 2.4;
+        const drop = ease((t - 0.2) / 0.3);
+        ctx.save();
+        ctx.translate(p.x + sweep, p.y - rpx * 3 * (1 - drop) - rpx * 0.4);
+        ctx.rotate(Math.sin(t * 9) * 0.06);
+        drawEraserSide(ctx, winner.spec.eraserId, width);
+        ctx.restore();
+        if (Math.random() < 0.8) {
+          particles.push({ kind: 'chip', x: p.x + sweep, y: p.y + rpx * 0.4, vx: rand(-120, 120), vy: rand(-40, 120), g: 300, drag: 2, life: rand(0.5, 1), rot: rand(0, 6), vr: rand(-8, 8), size: rand(4, 9) });
+        }
+        if (!reducedMotion()) shake = Math.max(shake, 3);
+      }
+    }
+  }
+
+  function drawFinishOverlay(world, fin) {
+    const W = L.width, H = L.height;
+    const loser = world.tops[fin.loser];
+    const p = arenaToScreen(L, loser.x, loser.y);
+    const outline = (text, x, y, size, fill) => {
+      ctx.font = `900 ${size}px ${HAND}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = size * 0.18;
+      ctx.strokeStyle = '#161616';
+      ctx.strokeText(text, x, y);
+      ctx.fillStyle = fill;
+      ctx.fillText(text, x, y);
+    };
+    if (fin.status === 'input') {
+      // dim everything except a spotlight on the loser
+      ctx.save();
+      const g = ctx.createRadialGradient(p.x, p.y, 40, p.x, p.y, Math.max(W, H) * 0.6);
+      g.addColorStop(0, 'rgba(0,0,0,0)');
+      g.addColorStop(0.25, 'rgba(10,0,0,0.45)');
+      g.addColorStop(1, 'rgba(10,0,0,0.7)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+      const topY = (L.hud === 'top' ? 110 : 70);
+      const pulse = 1 + 0.05 * Math.sin(clock * 10);
+      ctx.save();
+      ctx.translate(W / 2, topY);
+      ctx.scale(pulse, pulse);
+      outline('FINISH IT!', 0, 0, Math.min(72, W / 7), '#d62828');
+      ctx.restore();
+      if (fin.cpu) {
+        outline('The computer is finishing you…', W / 2, H - 80, Math.min(24, W / 18), '#fff');
+        return;
+      }
+      // the move chips
+      const n = fin.seq.length, size = Math.min(58, (W - 40) / n - 10), gap = 10;
+      const total = n * size + (n - 1) * gap;
+      const x0 = (W - total) / 2, y0 = L.rotate ? H - size - 140 : H - size - 70;
+      const glyph = { up: '↑', down: '↓', left: '←', right: '→', special: fin.touch ? 'TAP' : '★' };
+      fin.seq.forEach((m, k) => {
+        const x = x0 + k * (size + gap);
+        const done = k < fin.progress, next = k === fin.progress;
+        ctx.fillStyle = '#161616';
+        ctx.fillRect(x - 3, y0 - 3, size + 6, size + 6);
+        ctx.fillStyle = done ? '#22c55e' : next ? '#ffd23f' : '#fffdf6';
+        ctx.fillRect(x, y0, size, size);
+        ctx.font = `900 ${size * (m === 'special' && fin.touch ? 0.34 : 0.55)}px system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#161616';
+        ctx.fillText(glyph[m], x + size / 2, y0 + size / 2 + 1);
+        if (!fin.touch) {
+          ctx.font = `700 11px system-ui, sans-serif`;
+          ctx.fillStyle = '#fff';
+          ctx.fillText(fin.keyNames[m], x + size / 2, y0 + size + 12);
+        }
+      });
+      const left = Math.max(0, 1 - fin.t / FINISH_SECONDS);
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      ctx.fillRect(x0, y0 - 16, total, 6);
+      ctx.fillStyle = left < 0.3 ? '#ff5a5a' : '#ffd23f';
+      ctx.fillRect(x0, y0 - 16, total * left, 6);
+      outline(fin.touch ? 'Swipe the arrows, then tap!' : 'Enter the moves!', W / 2, y0 - 36, Math.min(22, W / 18), '#fff');
+    } else if (fin.status === 'anim') {
+      const k = fin.anim;
+      if (k > 1.3) {
+        const t = Math.min(1, (k - 1.3) / 0.25);
+        const sc = 2.2 - 1.2 * t;
+        ctx.save();
+        ctx.translate(W / 2, H * 0.36);
+        ctx.scale(sc, sc);
+        ctx.rotate(-0.06);
+        ctx.globalAlpha = Math.min(1, t * 2);
+        outline('RUBBERALITY!', 0, 0, Math.min(70, W / 8), '#ff3d6e');
+        ctx.restore();
+        outline(fin.name, W / 2, H * 0.36 + Math.min(52, W / 10), Math.min(26, W / 18), '#fff');
+      }
+    } else {
+      outline('…mercy.', W / 2, H * 0.4, Math.min(44, W / 10), '#ffffff');
+    }
   }
 
   // tug-of-war bar: whoever mashes more pushes it toward the other side

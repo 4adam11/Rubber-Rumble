@@ -53,7 +53,7 @@ export function createInput(target, getLayout, opts = {}) {
   let phase = 'menu';
   const held = new Set();
   const tracker = createTouchTracker();
-  const fresh = () => ({ keyStrokes: [], strokes: [], release: false, special: false, placeAngle: null, taps: 0 });
+  const fresh = () => ({ keyStrokes: [], strokes: [], release: false, special: false, placeAngle: null, taps: 0, moves: [] });
   let edge = [fresh(), fresh()];
   const pair = [createPairStrokeDetector(), createPairStrokeDetector()];
   const circle = [createCircleStrokeDetector(), createCircleStrokeDetector()];
@@ -76,6 +76,9 @@ export function createInput(target, getLayout, opts = {}) {
           if (e.code === k.left) edge[p].keyStrokes.push('L');
           if (e.code === k.right) edge[p].keyStrokes.push('R');
           if (e.code === k.release) edge[p].release = true;
+        } else if (phase === 'finish') {
+          const move = { [k.up]: 'up', [k.down]: 'down', [k.left]: 'left', [k.right]: 'right', [k.special]: 'special' }[e.code];
+          if (move) edge[p].moves.push(move);
         } else if (phase === 'battle' && e.code === k.special) {
           edge[p].special = true;
         } else if (phase === 'battle' && [k.left, k.right, k.up, k.down].includes(e.code)) {
@@ -126,7 +129,20 @@ export function createInput(target, getLayout, opts = {}) {
       }
     }
   }
+  // a finished touch or drag as a FINISH IT! move: short = tap (special), long = swipe direction
+  function swipeMove(dx, dy) {
+    if (Math.hypot(dx, dy) < 28) return 'special';
+    if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'right' : 'left';
+    return dy > 0 ? 'down' : 'up';
+  }
+
   function onTouchEnd(e) {
+    if (phase === 'finish') {
+      for (const t of e.changedTouches) {
+        const tr = tracker.get(t.identifier);
+        if (tr) edge[tr.player].moves.push(swipeMove(t.clientX - tr.startX, t.clientY - tr.startY));
+      }
+    }
     // always forget lifted fingers, even while a menu is up, or they go stale
     for (const t of e.changedTouches) tracker.up(t.identifier);
     for (let p = 0; p < players; p++) {
@@ -165,6 +181,7 @@ export function createInput(target, getLayout, opts = {}) {
   }
   function onMouseUp() {
     if (!mouse) return;
+    if (phase === 'finish') edge[0].moves.push(swipeMove(mouse.x - mouse.startX, mouse.y - mouse.startY));
     mouse = null;
     if (phase === 'launch') edge[0].release = true;
   }
@@ -241,6 +258,7 @@ export function createInput(target, getLayout, opts = {}) {
         steer: phase === 'battle' ? steerFor(p) : { x: 0, y: 0 },
         special: e.special,
         taps: e.taps,
+        moves: e.moves,
         touching: tracker.touchesFor(p).length > 0 || (p === 0 && !!mouse),
       };
     },

@@ -15,6 +15,7 @@ import { ABILITIES, ABILITY_IDS, UNLOCK_AT } from './abilities.js';
 import { ARENAS, ARENA_IDS } from './arenas.js';
 import { INTRO_SECONDS } from './intro.js';
 import { lineFor } from './announcer.js';
+import { FINISHERS, makeSequence, createFinishInput, pickFinisher, cpuFinishes } from './finisher.js';
 
 const canvas = document.getElementById('game');
 const renderer = createRenderer(canvas);
@@ -233,6 +234,7 @@ function stepBattle(dt) {
     g.timer += dt;
     if (isDemo()) { if (g.timer > 1.5) { startRound(); } return; }
     if (g.timer > 1.9 && !g.resultShown) {
+      if (g.match.state().over && !g.finish) { startFinish(); return; }
       g.resultShown = true;
       showResult();
     }
@@ -299,6 +301,7 @@ function showResult() {
     ui.show('match', {
       headline: g.config.mode === 'cpu' ? (st.winner === 0 ? 'You win the match!' : 'CPU wins the match') : `Player ${st.winner + 1} wins!`,
       color: PLAYER_COLORS[st.winner], names, wins: st.points,
+      extra: g.rubberality ? `💥 Finished with a Rubberality: ${FINISHERS[g.finish.finisher].name}!` : '',
       rounds: st.rounds.map((x, k) => `${roundLabel(st.rounds, k)}: ${x.winner === null ? 'draw' : `${names[x.winner]} · ${SHORT[x.reason]} +${x.points}`}`),
     });
   } else {
@@ -309,6 +312,80 @@ function showResult() {
       names, wins: st.points, draw: r.winner === null,
     });
   }
+}
+
+// ---------- FINISH IT! ----------
+function startFinish() {
+  const g = game;
+  const winner = g.match.state().winner;
+  const seq = makeSequence();
+  g.phase = 'finishit';
+  g.finish = {
+    winner, loser: 1 - winner, seq, input: createFinishInput(seq),
+    finisher: pickFinisher(g.specs[winner].archetype), status: 'input', anim: 0,
+    cpu: isCpu(winner), cpuAt: 1.2 + Math.random() * 1.2, cpuWill: isCpu(winner) && cpuFinishes(g.config.difficulty || 'medium'),
+  };
+  input.setPhase(isCpu(winner) ? 'menu' : 'finish');
+  ui.show('hud');
+  audio.boom();
+  audio.say(lineFor('finishIt'), { rate: 0.85, pitch: 0.6 });
+  buzz([50, 50, 50]);
+}
+
+function stepFinish(dt) {
+  const g = game, f = g.finish;
+  if (f.status === 'input') {
+    if (f.cpu) {
+      f.input.tick(dt);
+      if (f.input.state.t >= f.cpuAt) {
+        if (f.cpuWill) { for (const m of f.seq) f.input.feed(m); } else f.input.state.status = 'timeout';
+      }
+    } else {
+      for (let i = 0; i < 2; i++) {
+        const inp = input.poll(i);
+        if (i !== f.winner) continue;
+        for (const m of inp.moves) {
+          const r = f.input.feed(m);
+          if (r === 'progress' || r === 'done') { audio.click(); buzz(12); } else if (r === 'wrong') audio.clack(0.3);
+        }
+      }
+      f.input.tick(dt);
+    }
+    if (f.input.state.status === 'done') {
+      f.status = 'anim';
+      f.anim = 0;
+      input.setPhase('menu');
+      audio.say(lineFor('rubberality'), { rate: 0.85, pitch: 0.6 });
+      audio.crumble();
+      buzz([80, 40, 80, 40, 160]);
+    } else if (f.input.state.status === 'timeout') {
+      f.status = 'fail';
+      f.anim = 0;
+      input.setPhase('menu');
+    }
+  } else {
+    f.anim += dt;
+    if (f.anim > (f.status === 'anim' ? 3.4 : 1.3)) {
+      g.phase = 'over';
+      g.resultShown = true;
+      g.rubberality = f.status === 'anim';
+      showResult();
+    }
+  }
+}
+
+function finishFrame() {
+  const f = game.finish;
+  if (!f) return null;
+  const twoP = game.config.mode === '2p';
+  const keyNames = f.winner === 1 && twoP
+    ? { up: '↑', down: '↓', left: '←', right: '→', special: 'Enter' }
+    : { up: 'W', down: 'S', left: 'A', right: 'D', special: 'Space' };
+  return {
+    status: f.status, seq: f.seq, progress: f.input.state.progress, t: f.input.state.t, anim: f.anim,
+    winner: f.winner, loser: f.loser, finisher: f.finisher, name: FINISHERS[f.finisher].name,
+    cpu: f.cpu, touch: coarse, keyNames,
+  };
 }
 
 // ---------- menus ----------
@@ -513,6 +590,7 @@ function frameData() {
   return {
     hudData: hudData(),
     launchLabels: game.phase === 'launch' ? [0, 1].map(hints) : null,
+    finish: game.phase === 'finishit' ? finishFrame() : null,
     clashHint: coarse ? 'SPIN CLASH! TAP TAP TAP!' : game.config.mode === '2p' ? 'MASH!  P1: A/D   P2: ←/→' : 'MASH A / D!',
     touchGuide: coarse && game.phase === 'launch' ? humans : null,
     overlay: drawTouchControls,
@@ -586,7 +664,8 @@ function tick(dt) {
     if (game.phase === 'intro') {
       game.timer += dt;
       if (game.timer >= INTRO_SECONDS) startRound();
-    } else if (game.phase === 'launch') stepLaunch(sdt);
+    } else if (game.phase === 'finishit') stepFinish(dt);
+    else if (game.phase === 'launch') stepLaunch(sdt);
     else if (game.phase === 'battle' || game.phase === 'over') stepBattle(sdt);
   }
   renderer.update(paused ? 0 : dt);
