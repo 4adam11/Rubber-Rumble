@@ -3,6 +3,7 @@ import { ERASERS, LEADS } from './parts.js';
 import { ABILITY_IDS } from './abilities.js';
 import { ARENA_IDS } from './arenas.js';
 import { RUNGS } from './tournament.js';
+import { SHOP, newWallet } from './economy.js';
 
 const KEY = 'rubber-rumble:v1';
 const DEFAULT_PARTS = { eraserId: 'apsara-nondust', leadId: 'nataraj-hb' };
@@ -14,6 +15,7 @@ export function defaultSettings() {
     lastAbility: ['secondWind', 'dash'],
     lastArena: 'thali',
     tournament: { rung: 0, champion: false },
+    wallet: newWallet(),
   };
 }
 
@@ -37,6 +39,20 @@ export function loadSettings() {
       const t = raw.tournament;
       if (t && Number.isInteger(t.rung) && t.rung >= 0 && t.rung < RUNGS.length) {
         s.tournament = { rung: t.rung, champion: !!t.champion };
+      }
+      const w = raw.wallet;
+      if (w && Number.isFinite(w.coins) && Array.isArray(w.owned)) {
+        const ids = SHOP.map((i) => i.id);
+        const owned = [...new Set(['sleeve-classic', 'pencil-classic', ...w.owned.filter((id) => ids.includes(id))])];
+        const ok = (kind, skin) => owned.includes(`${kind}-${skin}`);
+        s.wallet = {
+          coins: Math.max(0, Math.floor(w.coins)),
+          owned,
+          equipped: {
+            sleeve: ok('sleeve', w.equipped?.sleeve) ? w.equipped.sleeve : 'classic',
+            pencil: ok('pencil', w.equipped?.pencil) ? w.equipped.pencil : 'classic',
+          },
+        };
       }
     }
   } catch { /* storage blocked or corrupt: defaults */ }

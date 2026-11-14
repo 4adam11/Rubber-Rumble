@@ -70,7 +70,7 @@ export function createHud() {
     ctx.clip();
     ctx.translate(px + port / 2, y + port / 2);
     ctx.rotate(clock * (p.health == null ? 0.6 : 2.5 * Math.max(0.15, s.shown)));
-    drawEraserTop(ctx, p.eraserId, port * 0.32);
+    drawEraserTop(ctx, p.eraserId, port * 0.32, p.skin);
     ctx.restore();
     ctx.strokeStyle = '#e9c46a';
     ctx.lineWidth = 1.5;

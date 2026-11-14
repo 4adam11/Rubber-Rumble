@@ -21,6 +21,88 @@ export const LEAD_ART = {
   'faber-2b': { barrel: '#1f4d33', stripe: '#3f7a57', end: 'ferrule', endColor: '#c9a646', label: '#e7c66b' },
 };
 
+// Shop skins (cosmetic). A skin recolours the sleeve or the pencil paint and adds a pattern.
+export const SLEEVE_SKINS = {
+  classic: null,
+  galaxy: { base: '#2b1d5c', accent: '#7c5cff', pattern: 'stars' },
+  tiger: { base: '#f28c18', accent: '#1a1a1a', pattern: 'stripes' },
+  tricolour: { base: '#ffffff', accent: '#138808', pattern: 'tricolour' },
+  neon: { base: '#111318', accent: '#39ff14', pattern: 'neon' },
+  gold: { base: '#c9a646', accent: '#fff1b8', pattern: 'foil' },
+};
+export const PENCIL_SKINS = {
+  classic: null,
+  rainbow: { barrel: '#ff4fa3', stripe: '#ffe066', label: '#ffffff', pattern: 'rainbow' },
+  camo: { barrel: '#4b5d2a', stripe: '#2f3a1a', label: '#d9d3a8', pattern: 'camo' },
+  gold: { barrel: '#c9a646', stripe: '#fff1b8', label: '#5a4300', endColor: '#e8d27a', pattern: 'foil' },
+};
+
+function withSkin(a, skin) {
+  const k = skin && SLEEVE_SKINS[skin];
+  if (!a || !k) return a;
+  return { ...a, base: k.base, accent: k.accent, skinPattern: k.pattern, rubber: a.sleeve === 'fruit' ? k.base : a.rubber };
+}
+
+function withPencilSkin(L, skin) {
+  const k = skin && PENCIL_SKINS[skin];
+  if (!L || !k) return L;
+  return { ...L, barrel: k.barrel, stripe: k.stripe, label: k.label, endColor: k.endColor || L.endColor, skinPattern: k.pattern };
+}
+
+// a skin's pattern painted over the sleeve (call while clipped to the sleeve area)
+function skinOverlay(ctx, pattern, x, y, w, h) {
+  if (!pattern) return;
+  ctx.save();
+  if (pattern === 'stars') {
+    let a = 77;
+    const rnd = () => { a = (a * 1103515245 + 12345) & 0x7fffffff; return a / 0x7fffffff; };
+    for (let i = 0; i < 18; i++) {
+      const sx = x + rnd() * w, sy = y + rnd() * h, sr = 0.5 + rnd() * 1.4;
+      ctx.fillStyle = rnd() < 0.3 ? '#c4b5ff' : '#ffffff';
+      ctx.beginPath(); ctx.arc(sx, sy, sr, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.strokeStyle = '#ffe066'; ctx.lineWidth = 1;
+    const cx = x + w * 0.7, cy = y + h * 0.35, k = Math.min(w, h) * 0.12;
+    ctx.beginPath(); ctx.moveTo(cx - k, cy); ctx.lineTo(cx + k, cy); ctx.moveTo(cx, cy - k); ctx.lineTo(cx, cy + k); ctx.stroke();
+  } else if (pattern === 'stripes') {
+    ctx.fillStyle = '#1a1a1a';
+    const step = Math.max(6, w / 6);
+    for (let sx = x - h; sx < x + w + h; sx += step) {
+      ctx.beginPath();
+      ctx.moveTo(sx, y); ctx.lineTo(sx + step * 0.35, y); ctx.lineTo(sx + step * 0.35 + h * 0.5, y + h); ctx.lineTo(sx + h * 0.5, y + h);
+      ctx.closePath(); ctx.fill();
+    }
+  } else if (pattern === 'tricolour') {
+    ctx.fillStyle = '#ff9933'; ctx.fillRect(x, y, w, h / 3);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y + h / 3, w, h / 3);
+    ctx.fillStyle = '#138808'; ctx.fillRect(x, y + (2 * h) / 3, w, h / 3);
+    ctx.strokeStyle = '#000080'; ctx.lineWidth = Math.max(0.8, h * 0.03);
+    ctx.beginPath(); ctx.arc(x + w / 2, y + h / 2, h * 0.13, 0, Math.PI * 2); ctx.stroke();
+  } else if (pattern === 'neon') {
+    ctx.strokeStyle = '#39ff14'; ctx.lineWidth = Math.max(1, h * 0.05);
+    ctx.shadowColor = '#39ff14'; ctx.shadowBlur = 6;
+    for (const f of [0.25, 0.5, 0.75]) { ctx.beginPath(); ctx.moveTo(x, y + h * f); ctx.lineTo(x + w, y + h * f + (f - 0.5) * h * 0.3); ctx.stroke(); }
+    ctx.strokeStyle = '#ff2d87'; ctx.shadowColor = '#ff2d87';
+    ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+  } else if (pattern === 'foil' || pattern === 'rainbow' || pattern === 'camo') {
+    if (pattern === 'foil') {
+      const g = ctx.createLinearGradient(x, y, x + w, y + h);
+      g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.45, 'rgba(255,255,255,0.65)'); g.addColorStop(0.55, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(255,240,180,0.3)');
+      ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
+    } else if (pattern === 'rainbow') {
+      const cols = ['#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#007aff', '#af52de'];
+      const bw = w / cols.length;
+      cols.forEach((c, i) => { ctx.fillStyle = c; ctx.globalAlpha = 0.85; ctx.fillRect(x + i * bw, y, bw + 0.5, h); });
+    } else {
+      let a = 11;
+      const rnd = () => { a = (a * 1103515245 + 12345) & 0x7fffffff; return a / 0x7fffffff; };
+      const cols = ['#2f3a1a', '#7a8450', '#5b4a2e'];
+      for (let i = 0; i < 14; i++) { ctx.fillStyle = cols[i % 3]; ctx.beginPath(); ctx.ellipse(x + rnd() * w, y + rnd() * h, w * 0.08, h * 0.35, rnd() * 3, 0, Math.PI * 2); ctx.fill(); }
+    }
+  }
+  ctx.restore();
+}
+
 const WOOD = '#e9c48f';
 const WOOD_DARK = '#c99a5c';
 const GRAPHITE = '#2b2b30';
@@ -118,6 +200,7 @@ function sleeveTop(ctx, a, w, h) {
       break;
     }
   }
+  skinOverlay(ctx, a.skinPattern, x0, -h / 2, sw, h);
   // sleeve edge shadows
   ctx.fillStyle = 'rgba(0,0,0,0.18)';
   ctx.fillRect(x0, -h, Math.max(1, w * 0.012), h * 2);
@@ -125,8 +208,8 @@ function sleeveTop(ctx, a, w, h) {
 }
 
 // ---------- erasers, top-down ----------
-export function drawEraserTop(ctx, id, r) {
-  const a = ERASER_ART[id];
+export function drawEraserTop(ctx, id, r, skin) {
+  const a = withSkin(ERASER_ART[id], skin?.sleeve);
   if (!a) return;
   const w = a.w * r, h = a.h * r;
   if (a.shape === 'hex') return neonHexTop(ctx, a, r);
@@ -145,6 +228,7 @@ export function drawEraserTop(ctx, id, r) {
   else rr(ctx, -w / 2, -h / 2, w, h, r * 0.22);
   ctx.clip();
   if (a.sleeve === 'fruit') {
+    skinOverlay(ctx, a.skinPattern, -w / 2, -h / 2, w, h);
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     ctx.beginPath();
     ctx.ellipse(-w * 0.1, -h * 0.18, w * 0.38, h * 0.16, 0, 0, Math.PI * 2);
@@ -222,8 +306,8 @@ function neonHexTop(ctx, a, r) {
 }
 
 // ---------- the pencil stub seen from above (centre of the top) ----------
-export function drawLeadTop(ctx, id, r, snapped) {
-  const L = LEAD_ART[id];
+export function drawLeadTop(ctx, id, r, snapped, skin) {
+  const L = withPencilSkin(LEAD_ART[id], skin?.pencil);
   if (!L) return;
   const R = r * 0.2;
   hexPath(ctx, R, 0);
@@ -300,6 +384,20 @@ function text(ctx, str, x, y, size, color, weight = 800, align = 'left', font = 
 
 // The printed sleeve as seen on the front face of the eraser (box x..x+w, y..y+h).
 function sleeveFront(ctx, id, a, x, y, w, h) {
+  if (a.skinPattern) { // a shop skin replaces the printed design
+    ctx.save();
+    ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+    const bx = a.sleeve === 'band' ? x + w * 0.12 : x, bw = a.sleeve === 'band' ? w * 0.7 : w;
+    ctx.fillStyle = a.base;
+    ctx.fillRect(bx, y, bw, h);
+    skinOverlay(ctx, a.skinPattern, bx, y, bw, h);
+    const sh = ctx.createLinearGradient(x, y, x, y + h);
+    sh.addColorStop(0, 'rgba(255,255,255,0.22)'); sh.addColorStop(0.2, 'rgba(255,255,255,0)'); sh.addColorStop(1, 'rgba(0,0,0,0.14)');
+    ctx.fillStyle = sh;
+    ctx.fillRect(bx, y, bw, h);
+    ctx.restore();
+    return;
+  }
   const p = ERASER_PRINT[id] || {};
   ctx.save();
   ctx.beginPath();
@@ -384,8 +482,8 @@ function sleeveFront(ctx, id, a, x, y, w, h) {
 }
 
 // ---------- a whole pencil, lying flat, tip to the right ----------
-export function drawPencil(ctx, id, x, y, len, th) {
-  const L = LEAD_ART[id];
+export function drawPencil(ctx, id, x, y, len, th, skin) {
+  const L = withPencilSkin(LEAD_ART[id], skin?.pencil);
   if (!L) return;
   const P = LEAD_PRINT[id] || { pattern: 'solid', text: '' };
   const tipLen = Math.min(len * 0.17, th * 3.2), endLen = len * 0.07;
@@ -410,6 +508,12 @@ export function drawPencil(ctx, id, x, y, len, th) {
     ctx.fillStyle = L.stripe;
     ctx.fillRect(bx0, top + th * 0.3 - sw / 2, bx1 - bx0, sw);
     ctx.fillRect(bx0, top + th * 0.7 - sw / 2, bx1 - bx0, sw);
+  }
+  if (L.skinPattern) {
+    ctx.save();
+    ctx.beginPath(); ctx.rect(bx0, top, bx1 - bx0, th); ctx.clip();
+    skinOverlay(ctx, L.skinPattern, bx0, top, bx1 - bx0, th);
+    ctx.restore();
   }
   // facet seams + top shine
   ctx.fillStyle = 'rgba(0,0,0,0.25)';
@@ -486,8 +590,8 @@ export function drawPencil(ctx, id, x, y, len, th) {
 }
 
 // ---------- erasers as product shots, 3/4 view (menus, intro) ----------
-export function drawEraserSide(ctx, id, width) {
-  const a = ERASER_ART[id];
+export function drawEraserSide(ctx, id, width, skin) {
+  const a = withSkin(ERASER_ART[id], skin?.sleeve);
   if (!a) return;
   if (a.shape === 'hex') return neonHexSide(ctx, a, width);
   const round = a.shape === 'pill';
@@ -513,6 +617,13 @@ export function drawEraserSide(ctx, id, width) {
     rr(ctx, x, y - dy * 0.5, w + dx, h + dy * 0.5, (h + dy * 0.5) / 2);
     ctx.fillStyle = body;
     ctx.fill();
+    if (a.skinPattern) {
+      ctx.save();
+      rr(ctx, x, y - dy * 0.5, w + dx, h + dy * 0.5, (h + dy * 0.5) / 2);
+      ctx.clip();
+      skinOverlay(ctx, a.skinPattern, x, y - dy * 0.5, w + dx, h + dy * 0.5);
+      ctx.restore();
+    }
     ctx.fillStyle = 'rgba(255,255,255,0.4)';
     rr(ctx, x + w * 0.12, y - dy * 0.3, w * 0.55, h * 0.22, h * 0.11);
     ctx.fill();
@@ -652,8 +763,8 @@ function neonHexSide(ctx, a, width) {
 }
 
 // ---------- the assembled top: eraser with the pencil lead poking out underneath ----------
-export function drawTopSide(ctx, eraserId, leadId, width) {
-  const L = LEAD_ART[leadId];
+export function drawTopSide(ctx, eraserId, leadId, width, skin) {
+  const L = withPencilSkin(LEAD_ART[leadId], skin?.pencil);
   const stubH = width * 0.5, stubW = width * 0.12;
   const baseY = width * 0.14;
   ctx.fillStyle = 'rgba(0,0,0,0.2)';
@@ -694,5 +805,5 @@ export function drawTopSide(ctx, eraserId, leadId, width) {
     ctx.fillStyle = GRAPHITE;
     ctx.fill();
   }
-  drawEraserSide(ctx, eraserId, width);
+  drawEraserSide(ctx, eraserId, width, skin);
 }

@@ -16,6 +16,7 @@ import { ARENAS, ARENA_IDS } from './arenas.js';
 import { INTRO_SECONDS } from './intro.js';
 import { lineFor } from './announcer.js';
 import { RUNGS, MODIFIERS, advance, bossSpec } from './tournament.js';
+import { matchCoins, buy, equip } from './economy.js';
 import { FINISHERS, makeSequence, createFinishInput, pickFinisher, cpuFinishes } from './finisher.js';
 
 const canvas = document.getElementById('game');
@@ -71,6 +72,7 @@ function startMatch(config) {
     config,
     specs: config.parts.map((p, i) => {
       const spec = buildTop(p.eraserId, p.leadId);
+      if (i === 0 && config.mode !== 'demo') spec.skin = { ...settings.wallet.equipped };
       return config.boss && i === 1 ? bossSpec(spec) : spec;
     }),
     match: createMatch(),
@@ -78,6 +80,7 @@ function startMatch(config) {
     phase: 'idle',
     world: null, launches: null, cpuPlans: [null, null], cpus: [null, null],
     timer: 0, acc: 0, resultShown: false,
+    bonus: { flawless: [0, 0], snapko: [0, 0] },
   };
   if (config.mode === 'demo') { startRound(); return; }
   game.phase = 'intro';
@@ -103,6 +106,7 @@ function introData() {
       color: PLAYER_COLORS[i],
       eraserId: g.specs[i].eraserId,
       leadId: g.specs[i].leadId,
+      skin: g.specs[i].skin,
       subtitle: rungOf() && i === 1 ? `“${rungOf().taunt}”` : g.specs[i].combo ? `★ ${g.specs[i].combo.name}` : `${g.specs[i].eraserName} + ${g.specs[i].leadName}`,
       ability: g.config.abilities[i],
     })),
@@ -281,6 +285,10 @@ function endRound(result) {
   g.match.record(result);
   const flawless = result.winner !== null && (g.taken?.[result.winner] || 0) < 1;
   g.lastFlawless = flawless;
+  if (result.winner !== null) {
+    if (flawless) g.bonus.flawless[result.winner]++;
+    if (result.reason === 'snapko') g.bonus.snapko[result.winner]++;
+  }
   audio.boom();
   audio.say(lineFor('finish', { reason: result.winner === null ? 'draw' : result.reason, flawless }));
   if (result.winner === null) {
@@ -303,6 +311,7 @@ function showResult() {
   if (st.over) {
     if (!g.endSoundPlayed) { // not again when coming Back from Change parts
       g.endSoundPlayed = true;
+      g.coinResult = payOut(st);
       const youLost = vsCpu() && st.winner === 1;
       youLost ? audio.lose() : audio.win();
       setTimeout(() => audio.say(lineFor('match', { name: names[st.winner] })), 500);
@@ -312,6 +321,7 @@ function showResult() {
       ...tournamentResult(st),
       color: PLAYER_COLORS[st.winner], names, wins: st.points,
       extra: g.rubberality ? `💥 Finished with a Rubberality: ${FINISHERS[g.finish.finisher].name}!` : '',
+      coins: g.coinResult,
       rounds: st.rounds.map((x, k) => `${roundLabel(st.rounds, k)}: ${x.winner === null ? 'draw' : `${names[x.winner]} · ${SHORT[x.reason]} +${x.points}`}`),
     });
   } else {
@@ -415,7 +425,30 @@ function showTitle() {
   session = null;
   audio.silence();
   startDemo();
-  ui.show('title', { muted: settings.muted });
+  ui.show('title', { muted: settings.muted, coins: settings.wallet.coins });
+}
+
+// ---------- pocket money ----------
+// Coins go to the human: player 1 against the computer, or the winner in a 2-player match.
+function payOut(st) {
+  const g = game;
+  const who = vsCpu() ? 0 : st.winner;
+  const won = st.winner === who;
+  const rung = g.config.rung ?? 0;
+  const r = matchCoins({
+    mode: g.config.mode, difficulty: g.config.difficulty, won,
+    roundsWon: st.wins[who], flawless: g.bonus.flawless[who], snapko: g.bonus.snapko[who],
+    rubberality: !!g.rubberality && won,
+    rung, champion: g.config.mode === 'tournament' && won && rung === RUNGS.length - 1,
+  });
+  settings.wallet = { ...settings.wallet, coins: settings.wallet.coins + r.total };
+  saveSettings(settings);
+  return { ...r, balance: settings.wallet.coins };
+}
+
+function showShop(message = '') {
+  const parts = settings.lastParts[0];
+  ui.show('shop', { wallet: settings.wallet, eraserId: parts.eraserId, leadId: parts.leadId, message });
 }
 
 // ---------- School Tournament ----------
@@ -467,6 +500,7 @@ function openPicker(player) {
   ui.show('picker', {
     player, who: who(player), color: PLAYER_COLORS[player], note,
     eraserId: parts.eraserId, leadId: parts.leadId,
+    skin: player === 0 ? { ...settings.wallet.equipped } : undefined,
   });
 }
 
@@ -564,6 +598,22 @@ function onAction(action, value) {
     case 'play-cpu': session = { mode: 'cpu' }; ui.show('difficulty'); break;
     case 'play-2p': session = { mode: '2p' }; openPicker(0); break;
     case 'tournament': session = { mode: 'tournament' }; showLadder(); break;
+    case 'shop': showShop(); break;
+    case 'shop-buy': {
+      const res = buy(settings.wallet, value);
+      if (res.ok) {
+        settings.wallet = equip(res.wallet, value).wallet; // wear it straight away
+        saveSettings(settings);
+        audio.perfect();
+        showShop();
+      } else showShop(res.reason === 'coins' ? 'Not enough coins yet — win some matches!' : '');
+      break;
+    }
+    case 'shop-equip':
+      settings.wallet = equip(settings.wallet, value).wallet;
+      saveSettings(settings);
+      showShop();
+      break;
     case 'ladder': session = { mode: 'tournament', parts: session?.parts, abilities: session?.abilities }; showLadder(); break;
     case 'fight-rung':
       session.rung = Number(value);
@@ -576,7 +626,7 @@ function onAction(action, value) {
       settings.muted = !settings.muted;
       audio.setMuted(settings.muted);
       saveSettings(settings);
-      ui.show('title', { muted: settings.muted });
+      ui.show('title', { muted: settings.muted, coins: settings.wallet.coins });
       break;
     case 'ready': partsReady(session.picking, value); break;
     case 'ability-ready': abilityReady(session.picking, value); break;
@@ -597,7 +647,7 @@ function onAction(action, value) {
 
 function back() {
   const screen = ui.current;
-  if (screen === 'howto' || screen === 'difficulty' || screen === 'ladder') { showTitle(); return; }
+  if (screen === 'howto' || screen === 'difficulty' || screen === 'ladder' || screen === 'shop') { showTitle(); return; }
   if (screen === 'ability') { openPicker(session.picking); return; }
   if (screen === 'arena') { openAbility(session.mode === '2p' ? 1 : 0); return; }
   if (screen === 'picker') {
@@ -637,6 +687,7 @@ function hudData() {
         name: playerName(i),
         color: PLAYER_COLORS[i],
         eraserId: game.specs[i].eraserId,
+        skin: game.specs[i].skin,
         health: t ? t.rpm / t.spec.maxRPM : null,
         points: game.match.state().points[i],
         target: TARGET_POINTS,

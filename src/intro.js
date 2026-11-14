@@ -80,7 +80,7 @@ export function drawIntro(ctx, L, p, data, clock) {
     ctx.save();
     ctx.translate(cx, cy + Math.sin(clock * 3 + i) * 5);
     ctx.rotate(Math.sin(clock * 2.4 + i) * 0.06);
-    drawTopSide(ctx, pl.eraserId, pl.leadId, size);
+    drawTopSide(ctx, pl.eraserId, pl.leadId, size, pl.skin);
     ctx.restore();
 
     // name + combo + ability

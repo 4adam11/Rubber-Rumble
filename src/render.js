@@ -353,9 +353,9 @@ export function createRenderer(canvas) {
       }
     }
     ctx.globalAlpha = opts.ghost ? 0.55 : 1 - 0.5 * Math.max(0, spin - 0.25);
-    drawEraserTop(ctx, spec.eraserId, rpx);
+    drawEraserTop(ctx, spec.eraserId, rpx, spec.skin);
     ctx.globalAlpha = 1;
-    drawLeadTop(ctx, spec.leadId, rpx, t.leadSnapped);
+    drawLeadTop(ctx, spec.leadId, rpx, t.leadSnapped, spec.skin);
     ctx.restore();
 
     // graphite shield bubble
@@ -683,7 +683,7 @@ export function createRenderer(canvas) {
         ctx.save();
         ctx.translate(p.x + sweep, p.y - rpx * 3 * (1 - drop) - rpx * 0.4);
         ctx.rotate(Math.sin(t * 9) * 0.06);
-        drawEraserSide(ctx, winner.spec.eraserId, width);
+        drawEraserSide(ctx, winner.spec.eraserId, width, winner.spec.skin);
         ctx.restore();
         if (Math.random() < 0.8) {
           particles.push({ kind: 'chip', x: p.x + sweep, y: p.y + rpx * 0.4, vx: rand(-120, 120), vy: rand(-40, 120), g: 300, drag: 2, life: rand(0.5, 1), rot: rand(0, 6), vr: rand(-8, 8), size: rand(4, 9) });

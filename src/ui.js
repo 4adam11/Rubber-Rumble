@@ -6,6 +6,7 @@ import { ARENAS, ARENA_IDS } from './arenas.js';
 import { paintArenaThumb } from './arena-art.js';
 import { DEMOS, drawDemo } from './demos.js';
 import { RUNGS, MODIFIERS } from './tournament.js';
+import { SHOP, owns } from './economy.js';
 
 const ARCH = { attack: 'Attack', defense: 'Defense', stamina: 'Stamina', balance: 'Balance', wildcard: 'Wildcard' };
 const STATS = [['attack', 'Attack'], ['defense', 'Defense'], ['stamina', 'Stamina'], ['balance', 'Balance'], ['speed', 'Speed']];
@@ -41,9 +42,11 @@ function thumb(key, w, h, draw) {
   return url;
 }
 // big product shots for the pencil-box picker
-const eraserThumb = (id) => thumb(`e2:${id}`, 150, 100, (g) => { g.translate(70, 54); drawEraserSide(g, id, 112); });
+const skinKey = (skin) => (skin ? `${skin.sleeve || ''}/${skin.pencil || ''}` : '');
+const eraserThumb = (id, skin) => thumb(`e2:${id}:${skinKey(skin)}`, 150, 100, (g) => { g.translate(70, 54); drawEraserSide(g, id, 112, skin); });
 // pencils stand upright in the cup, tip up
-const pencilThumb = (id) => thumb(`p2:${id}`, 40, 210, (g) => { g.translate(20, 206); g.rotate(-Math.PI / 2); drawPencil(g, id, 0, 0, 200, 24); });
+const pencilThumb = (id, skin) => thumb(`p2:${id}:${skinKey(skin)}`, 40, 210, (g) => { g.translate(20, 206); g.rotate(-Math.PI / 2); drawPencil(g, id, 0, 0, 200, 24, skin); });
+const pencilFlat = (id, skin) => thumb(`pf:${id}:${skinKey(skin)}`, 170, 40, (g) => drawPencil(g, id, 4, 20, 160, 20, skin));
 const SHORT_LEAD = {
   'nataraj-hb': 'Nataraj HB', 'apsara-platinum': 'Platinum', 'apsara-absolute': 'Absolute',
   'doms-y1': 'Doms Y1+', 'camlin-exam': 'Camlin Exam', 'faber-2b': 'Faber 2B',
@@ -98,6 +101,7 @@ export function createUI(root, handlers, opts = {}) {
         <div class="stack">
           <button class="btn btn-primary" data-action="play-cpu">Play vs Computer</button>
           <button class="btn btn-tourney" data-action="tournament">🏆 School Tournament</button>
+          <button class="btn btn-shop" data-action="shop">🛍 Stationery Shop <span class="coin-chip">🪙 ${d.coins ?? 0}</span></button>
           <button class="btn" data-action="play-2p">2 Players · same device</button>
           <button class="btn btn-ghost" data-action="howto">How to play</button>
         </div>
@@ -171,7 +175,7 @@ export function createUI(root, handlers, opts = {}) {
             <div class="slots">
               ${ERASERS.map((e) => `
                 <button class="slot ${e.id === d.eraserId ? 'is-on' : ''}" data-action="pick-eraser" data-value="${e.id}" aria-pressed="${e.id === d.eraserId}" title="${esc(e.note)}">
-                  <img src="${eraserThumb(e.id)}" alt="" width="150" height="100">
+                  <img src="${eraserThumb(e.id, d.skin)}" alt="" width="150" height="100">
                   <span class="slot-name">${esc(e.name)}</span>
                   <span class="slot-type">${ARCH_ICON[e.archetype]} ${ARCH[e.archetype]}</span>
                 </button>`).join('')}
@@ -182,7 +186,7 @@ export function createUI(root, handlers, opts = {}) {
             <div class="cup-pencils">
               ${LEADS.map((l) => `
                 <button class="cup-pencil ${l.id === d.leadId ? 'is-on' : ''}" data-action="pick-lead" data-value="${l.id}" aria-pressed="${l.id === d.leadId}" aria-label="${esc(l.name)}">
-                  <img src="${pencilThumb(l.id)}" alt="" width="40" height="210">
+                  <img src="${pencilThumb(l.id, d.skin)}" alt="" width="40" height="210">
                   <span>${esc(SHORT_LEAD[l.id] || l.name)}</span>
                 </button>`).join('')}
               <div class="cup-front" aria-hidden="true"></div>
@@ -230,7 +234,7 @@ export function createUI(root, handlers, opts = {}) {
       g.save();
       g.translate(160, 62 + drop + bob);
       g.rotate(Math.sin(t * 3.1) * 0.05);
-      drawTopSide(g, d.eraserId, d.leadId, 170);
+      drawTopSide(g, d.eraserId, d.leadId, 170, d.skin);
       g.restore();
       // spin lines round the lead tip
       g.strokeStyle = 'rgba(31,42,68,0.25)';
@@ -383,6 +387,38 @@ export function createUI(root, handlers, opts = {}) {
       </div>`, 'with-backdrop');
   }
 
+  // Stationery Shop: buy and wear sleeves and pencil paints (looks only)
+  function shop(d) {
+    const w = d.wallet;
+    const card = (item) => {
+      const has = owns(w, item.id);
+      const on = w.equipped[item.kind] === item.skin;
+      const skin = item.kind === 'sleeve' ? { sleeve: item.skin } : { pencil: item.skin };
+      const img = item.kind === 'sleeve'
+        ? `<img src="${eraserThumb(d.eraserId, skin)}" alt="" width="150" height="100">`
+        : `<img class="shop-pencil" src="${pencilFlat(d.leadId, skin)}" alt="" width="170" height="40">`;
+      const btn = on ? '<span class="shop-on">✓ Wearing</span>'
+        : has ? `<button class="btn" data-action="shop-equip" data-value="${item.id}">Wear</button>`
+          : `<button class="btn ${w.coins >= item.price ? 'btn-primary' : 'btn-ghost'}" data-action="shop-buy" data-value="${item.id}" ${w.coins >= item.price ? '' : 'disabled'}>🪙 ${item.price}</button>`;
+      return `<div class="shop-item ${on ? 'is-on' : ''}">${img}<b>${esc(item.name)}</b><small>${esc(item.desc)}</small>${btn}</div>`;
+    };
+    mount('shop', `
+      <div class="sheet sheet-wide sheet-shop">
+        <div class="shop-head">
+          <h2>🛍 Stationery Shop</h2>
+          <span class="coin-chip big">🪙 ${w.coins}</span>
+        </div>
+        <p class="note">Earn pocket money by winning. Skins are just for looks — every part stays free.${d.message ? ` <b class="shop-msg">${esc(d.message)}</b>` : ''}</p>
+        <h3 class="shop-sec">Eraser sleeves</h3>
+        <div class="shop-grid">${SHOP.filter((i) => i.kind === 'sleeve').map(card).join('')}</div>
+        <h3 class="shop-sec">Pencil paints</h3>
+        <div class="shop-grid">${SHOP.filter((i) => i.kind === 'pencil').map(card).join('')}</div>
+        <div class="row sticky-row">
+          <button class="btn btn-ghost" data-action="back">← Back</button>
+        </div>
+      </div>`, 'with-backdrop');
+  }
+
   function introScreen() {
     mount('intro', `<button class="skip-area" data-action="skip-intro" aria-label="Skip intro"></button><span class="skip-intro">Tap to skip ›</span>`, 'intro');
   }
@@ -408,6 +444,7 @@ export function createUI(root, handlers, opts = {}) {
         ${d.extra ? `<p class="sub extra">${esc(d.extra)}</p>` : ''}
         <p class="score">${esc(d.names[0])} <b>${d.wins[0]}</b> – <b>${d.wins[1]}</b> ${esc(d.names[1])}</p>
         <ul class="rounds">${d.rounds.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
+        ${d.coins ? `<div class="coins-earned"><b>🪙 +${d.coins.total} pocket money</b>${d.coins.lines.map((l) => `<span>${esc(l.label)} +${l.coins}</span>`).join('')}<small>You have ${d.coins.balance} coins</small></div>` : ''}
         <div class="stack">
           ${d.buttons ? d.buttons.map((b, k) => `<button class="btn ${b.primary ? 'btn-primary' : k === d.buttons.length - 1 ? 'btn-ghost' : ''}" data-action="${b.action}" ${b.primary ? 'autofocus' : ''}>${esc(b.label)}</button>`).join('') : `
           <button class="btn btn-primary" data-action="rematch" autofocus>Rematch</button>
@@ -496,7 +533,7 @@ export function createUI(root, handlers, opts = {}) {
   return {
     show(name, data = {}) {
       if (name === 'picker') { picker = { ...data }; renderPicker(); return; }
-      ({ title, difficulty, round: roundResult, match: matchResult, pause, howto, hud, ability: abilityScreen, arena: arenaScreen, intro: introScreen, ladder })[name](data);
+      ({ title, difficulty, round: roundResult, match: matchResult, pause, howto, hud, ability: abilityScreen, arena: arenaScreen, intro: introScreen, ladder, shop })[name](data);
     },
     hide() { current = null; root.innerHTML = ''; },
     get current() { return current; },
