@@ -49,6 +49,7 @@ const input = createInput(canvas, () => renderer.layout, {
     if (!s) return null;
     return arenaToScreen(renderer.layout, LAUNCH.START_RADIUS * Math.cos(s.rimAngle), LAUNCH.START_RADIUS * Math.sin(s.rimAngle));
   },
+  onMute: () => toggleSound(),
   onPause: () => {
     if (game?.phase === 'intro' && !isDemo()) { skipIntro(); return; }
     paused ? resume() : pause();
@@ -136,7 +137,7 @@ function startRound() {
   g.cpus = [0, 1].map((i) => (isCpu(i) ? createCpu(diff, i) : null));
   if (isDemo()) return;
   input.setPhase('launch');
-  ui.show('hud');
+  ui.show('hud', { muted: settings.muted });
   const done = g.match.state().rounds;
   const label = roundLabel(done, done.length);
   const twist = rungOf()?.modifier ? MODIFIERS[rungOf().modifier] : null;
@@ -192,6 +193,13 @@ function stepLaunch(dt) {
   }
 }
 
+// left/right speaker position for something at arena point (x, y)
+function panAt(x, y) {
+  const L = renderer.layout;
+  const p = arenaToScreen(L, x, y);
+  return Math.max(-0.85, Math.min(0.85, (p.x / L.width) * 2 - 1));
+}
+
 function startBattle() {
   const g = game;
   g.phase = 'battle';
@@ -223,7 +231,7 @@ function stepBattle(dt) {
   if (!isDemo()) {
     renderer.spawnFromEvents(w.events, w);
     for (const e of w.events) {
-      if (e.type === 'hit') { audio.clack(e.impact); if (e.impact > 0.8) buzz(15); }
+      if (e.type === 'hit') { audio.hit(e.impact, panAt(e.x, e.y)); if (e.impact > 0.8) buzz(15); }
       else if (e.type === 'snap') { audio.snap(); buzz([60, 40, 90]); audio.say(lineFor('snap')); }
       else if (e.type === 'damage') g.taken[e.i] += e.amount;
       else if (e.type === 'crumble') { audio.crumble(); buzz([90, 50, 140]); }
@@ -231,10 +239,11 @@ function stepBattle(dt) {
       else if (e.type === 'clashEnd') { audio.grind(false); audio.special(); buzz(60); }
       else if (e.type === 'special') { audio.special(); buzz(25); }
       else if (e.type === 'unlock') { audio.perfect(); if (!isCpu(e.i)) { buzz([30, 40, 30]); audio.say(lineFor('unlock'), { rate: 1.1 }); } }
-      else if (e.type === 'block' || e.type === 'bump') audio.clack(1);
+      else if (e.type === 'block') audio.hit(1, panAt(w.tops[e.i].x, w.tops[e.i].y), 'shield');
+      else if (e.type === 'bump') audio.hit(e.impact * 1.5, panAt(e.x, e.y), 'metal');
       else if (e.type === 'quake') { audio.boom(); buzz(120); }
     }
-    w.tops.forEach((t, i) => audio.hum(i, w.over ? 0 : t.rpm / t.spec.maxRPM));
+    w.tops.forEach((t, i) => audio.spin(i, w.over || w.clash ? 0 : t.rpm / t.spec.maxRPM, { wobble: t.wobble, pan: panAt(t.x, t.y) }));
     if (w.clash) audio.grind(true);
   } else {
     renderer.spawnFromEvents(w.events.filter((e) => e.type === 'hit'), w, true);
@@ -346,7 +355,7 @@ function startFinish() {
     cpu: isCpu(winner), cpuAt: 1.2 + Math.random() * 1.2, cpuWill: isCpu(winner) && cpuFinishes(g.config.difficulty || 'medium'),
   };
   input.setPhase(isCpu(winner) ? 'menu' : 'finish');
-  ui.show('hud');
+  ui.show('hud', { muted: settings.muted });
   audio.boom();
   audio.say(lineFor('finishIt'), { rate: 0.85, pitch: 0.6 });
   buzz([50, 50, 50]);
@@ -426,6 +435,16 @@ function showTitle() {
   audio.silence();
   startDemo();
   ui.show('title', { muted: settings.muted, coins: settings.wallet.coins });
+}
+
+// sound on/off from the arena button or the M key (same setting as the title screen)
+function toggleSound() {
+  settings.muted = !settings.muted;
+  audio.setMuted(settings.muted);
+  if (settings.muted) audio.silence();
+  saveSettings(settings);
+  if (ui.current === 'hud') ui.show('hud', { muted: settings.muted });
+  if (ui.current === 'title') ui.show('title', { muted: settings.muted, coins: settings.wallet.coins });
 }
 
 // ---------- pocket money ----------
@@ -588,7 +607,7 @@ function resume() {
   if (!paused) return;
   paused = false;
   input.setPhase(game.phase === 'launch' ? 'launch' : 'battle');
-  ui.show('hud');
+  ui.show('hud', { muted: settings.muted });
 }
 
 document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
@@ -599,6 +618,7 @@ function onAction(action, value) {
     case 'play-2p': session = { mode: '2p' }; openPicker(0); break;
     case 'tournament': session = { mode: 'tournament' }; showLadder(); break;
     case 'shop': showShop(); break;
+    case 'toggle-sound-hud': toggleSound(); break;
     case 'shop-buy': {
       const res = buy(settings.wallet, value);
       if (res.ok) {

@@ -66,6 +66,7 @@ export function createInput(target, getLayout, opts = {}) {
 
   function onKeyDown(e) {
     if (e.code === 'Escape' || e.code === 'KeyP') { opts.onPause?.(); return; }
+    if (e.code === 'KeyM' && !e.repeat) { opts.onMute?.(); return; }
     if (phase === 'menu' || !GAME_KEYS.has(e.code)) return;
     e.preventDefault();
     held.add(e.code);

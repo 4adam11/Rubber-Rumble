@@ -533,7 +533,10 @@ export function createUI(root, handlers, opts = {}) {
   }
 
   function hud(d) {
-    mount('hud', `<button class="pause-btn" data-action="pause" aria-label="Pause">❚❚</button>`, 'hud');
+    mount('hud', `<div class="hud-buttons">
+      <button class="pause-btn" data-action="pause" aria-label="Pause">❚❚</button>
+      <button class="pause-btn sound-btn ${d.muted ? 'is-muted' : ''}" data-action="toggle-sound-hud" aria-label="${d.muted ? 'Turn sound on' : 'Turn sound off'}" aria-pressed="${!d.muted}">${d.muted ? '🔇' : '🔊'}</button>
+    </div>`, 'hud');
   }
 
   return {

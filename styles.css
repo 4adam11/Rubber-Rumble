@@ -289,6 +289,9 @@ kbd {
 }
 
 /* in-game */
+.hud-buttons { display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+.sound-btn { font-size: 18px; }
+.sound-btn.is-muted { background: rgba(255, 225, 220, 0.95); }
 .pause-btn {
   pointer-events: auto;
   width: 44px;

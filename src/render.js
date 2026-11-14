@@ -41,7 +41,14 @@ export function createRenderer(canvas) {
   const stamps = [];
   const trails = [[], []];
   let trailWorld = null;
-  const cam = { zoom: 1, target: 1, fx: 0, fy: 0, hold: 0 };
+  const cam = { zoom: 1, target: 1, fx: 0, fy: 0, hold: 0, follow: null };
+  let marks = null;            // graphite scratches left on the plate by the pencil tips
+  let marksFade = 0;
+  const lastTip = [null, null];
+  const hitPulse = [0, 0];     // squash when a top gets hit
+  const comics = [];           // "DHISHOOM!" bursts
+  let comicCooldown = 0;
+  const COMIC_WORDS = ['DHISHOOM!', 'THWACK!', 'BONK!', 'WHAM!', 'DHADAAM!', 'TADAK!'];
   const slow = { scale: 1, left: 0 };
   const hud = createHud();
   const self = { hud };
@@ -55,6 +62,10 @@ export function createRenderer(canvas) {
     g.scale(dpr, dpr);
     paintDesk(g, w, h);
     paintArena(g, L, arenaId);
+    marks = document.createElement('canvas');
+    marks.width = bg.width;
+    marks.height = bg.height;
+    lastTip[0] = lastTip[1] = null;
   }
 
   function resize() {
@@ -80,7 +91,10 @@ export function createRenderer(canvas) {
     shake = Math.max(0, shake - dt * 30);
     flash = Math.max(0, flash - dt * 2.5);
     if (slow.left > 0) { slow.left -= dt; if (slow.left <= 0) slow.scale = 1; }
-    if (cam.hold > 0) cam.hold -= dt; else cam.target = 1;
+    if (cam.hold > 0) cam.hold -= dt; else cam.target = cam.follow ?? 1;
+    for (let i = 0; i < 2; i++) hitPulse[i] = Math.max(0, hitPulse[i] - dt);
+    comicCooldown = Math.max(0, comicCooldown - dt);
+    for (let i = comics.length - 1; i >= 0; i--) { comics[i].t += dt; if (comics[i].t >= comics[i].life) comics.splice(i, 1); }
     cam.zoom += (cam.target - cam.zoom) * Math.min(1, dt * 7);
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
@@ -152,6 +166,11 @@ export function createRenderer(canvas) {
         burst(p.x, p.y, Math.min(26, 5 + e.impact * 12), false);
         if (quiet) continue;
         wave(p.x, p.y, 4, 24 + e.impact * 30, 0.35, 'rgba(255,255,255,0.9)', 3);
+        hitPulse[0] = hitPulse[1] = 0.14;
+        if (e.impact > 1.05 && comicCooldown <= 0) {
+          comics.push({ x: p.x, y: p.y, t: 0, life: 0.55, word: COMIC_WORDS[Math.floor(Math.random() * COMIC_WORDS.length)], size: Math.min(1.4, 0.8 + e.impact * 0.25), rot: rand(-0.3, 0.3) });
+          comicCooldown = 0.45;
+        }
         if (!reducedMotion()) shake = Math.max(shake, Math.min(9, e.impact * 5));
         if (e.impact > 1.3) { slowmo(0.25, 0.08); flash = Math.max(flash, 0.12); }
       } else if (quiet) {
@@ -219,6 +238,10 @@ export function createRenderer(canvas) {
         wave(p.x, p.y, 20, 60, 0.4, 'rgba(160,190,255,0.9)', 4);
       } else if (e.type === 'bump') {
         const p = arenaToScreen(L, e.x, e.y);
+        if (e.impact > 0.6 && comicCooldown <= 0) {
+          comics.push({ x: p.x, y: p.y, t: 0, life: 0.5, word: 'CLANG!', size: 0.9, rot: rand(-0.3, 0.3) });
+          comicCooldown = 0.45;
+        }
         sparks(p.x, p.y, 10, '#ffe7a3');
         if (!reducedMotion()) shake = Math.max(shake, 4);
       }
@@ -330,8 +353,22 @@ export function createRenderer(canvas) {
       ctx.restore();
     }
 
+    // the tip touching the plate stays put while the body leans and circles (precession)
+    if (wob > 0.3 && !opts.ghost) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(1.5, rpx * 0.08), 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(30,30,36,0.7)';
+      ctx.fill();
+    }
     ctx.save();
     ctx.translate(p.x + ox, p.y + oy);
+    if (wob > 0.12 && !opts.ghost) { // lean: squash along the tilt direction
+      ctx.rotate(wa);
+      ctx.scale(1, 1 - 0.3 * wob);
+      ctx.rotate(-wa);
+    }
+    const pulse = hitPulse[i] > 0 && !opts.ghost ? 1 - 0.12 * Math.sin((hitPulse[i] / 0.14) * Math.PI) : 1;
+    if (pulse !== 1) ctx.scale(pulse, 2 - pulse);
     ctx.rotate(t.angle);
     if (spin > 0.2 && !opts.ghost) {
       const sweep = rpx * 1.14;
@@ -350,6 +387,16 @@ export function createRenderer(canvas) {
         ctx.beginPath();
         ctx.arc(0, 0, sweep * (0.7 + k * 0.14), k * 2.1, k * 2.1 + 1.2 * spin);
         ctx.stroke();
+      }
+    }
+    if (spin > 0.3 && !opts.ghost && !reducedMotion()) { // rotational motion blur
+      const dir = t.spinDir || 1;
+      for (let k = 3; k >= 1; k--) {
+        ctx.save();
+        ctx.rotate(-dir * k * 0.2 * spin);
+        ctx.globalAlpha = 0.16 * (1 - k / 4) * spin;
+        drawEraserTop(ctx, spec.eraserId, rpx, spec.skin);
+        ctx.restore();
       }
     }
     ctx.globalAlpha = opts.ghost ? 0.55 : 1 - 0.5 * Math.max(0, spin - 0.25);
@@ -434,6 +481,14 @@ export function createRenderer(canvas) {
         ctx.fill();
         ctx.fillStyle = 'rgba(255,255,255,0.35)';
         ctx.fillRect(-p.size * 0.2, -p.size * 0.12, p.size * 0.4, 1.5);
+      } else if (p.kind === 'crumb') {
+        ctx.fillStyle = p.color;
+        ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+        ctx.lineWidth = 0.6;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, p.size, p.size * 0.7, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
       } else if (p.kind === 'chip') {
         ctx.fillStyle = '#e9c48f';
         ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
@@ -470,14 +525,15 @@ export function createRenderer(canvas) {
 
   // "LEAD SNAPPED!" stamped on, then cracked in two
   function drawStamps() {
-    for (const s of stamps) {
+    stamps.forEach((s, n) => {
       const k = s.t / s.life;
       const size = Math.min(54, L.width / 9);
       const pop = k < 0.12 ? 2.2 - 1.2 * (k / 0.12) : 1;
       const split = k > 0.45 ? (k - 0.45) / 0.55 : 0;
       const alpha = k > 0.8 ? (1 - k) / 0.2 : 1;
       const x = Math.min(Math.max(s.x, size * 4), L.width - size * 4);
-      const y = Math.max(s.y - size * 1.6, size * 1.2 + (L.hud === 'top' ? 84 : 0));
+      // two snaps at once stack instead of overlapping
+      const y = Math.max(s.y - size * 1.6, size * 1.2 + (L.hud === 'top' ? 84 : 0)) + n * size * 1.25;
       ctx.save();
       ctx.globalAlpha = Math.max(0, alpha);
       ctx.translate(x, y);
@@ -513,7 +569,7 @@ export function createRenderer(canvas) {
         ctx.restore();
       }
       ctx.restore();
-    }
+    });
   }
 
   function drawBanners() {
@@ -557,16 +613,148 @@ export function createRenderer(canvas) {
     drawBanners();
   }
 
+  // ---------- fight animation helpers ----------
+  // pencil tips scratch faint graphite lines into the steel; they slowly fade
+  function drawMarks(world) {
+    if (!marks || !marks.width) return;
+    const g = marks.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.save();
+    g.beginPath();
+    g.arc(L.cx, L.cy, L.scale * 0.995, 0, Math.PI * 2);
+    g.clip();
+    g.lineCap = 'round';
+    world.tops.forEach((t, i) => {
+      const p = arenaToScreen(L, t.x, t.y);
+      const prev = lastTip[i];
+      lastTip[i] = p;
+      if (!prev || world.over || t.rpm <= 0) return;
+      const jitter = t.wobble * 2.5;
+      g.strokeStyle = `rgba(35,35,42,${0.22 + 0.2 * Math.min(1, t.wobble + 0.2)})`;
+      g.lineWidth = 1.3 + t.wobble * 1.8;
+      g.beginPath();
+      g.moveTo(prev.x + rand(-jitter, jitter), prev.y + rand(-jitter, jitter));
+      g.lineTo(p.x, p.y);
+      g.stroke();
+    });
+    g.restore();
+    marksFade += 1;
+    if (marksFade >= 20) { // every ~third of a second, fade old scratches a little
+      marksFade = 0;
+      g.globalCompositeOperation = 'destination-out';
+      g.fillStyle = 'rgba(0,0,0,0.045)';
+      g.fillRect(0, 0, L.width, L.height);
+      g.globalCompositeOperation = 'source-over';
+    }
+    ctx.drawImage(marks, 0, 0, L.width, L.height);
+  }
+
+  // a glint of light slowly travelling round the rim
+  function rimGlint() {
+    const R = L.scale * 1.04;
+    const a = clock * 0.35;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = Math.max(2, L.scale * 0.025);
+    ctx.beginPath();
+    ctx.arc(L.cx, L.cy, R, a, a + 0.45);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.beginPath();
+    ctx.arc(L.cx, L.cy, R, a + Math.PI, a + Math.PI + 0.25);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // fast tops rub off little eraser crumbs
+  function shedCrumbs(world) {
+    if (world.over || world.clash) return;
+    for (const t of world.tops) {
+      const speed = Math.hypot(t.vx, t.vy);
+      if (speed < 0.45 || Math.random() > speed * 0.35) continue;
+      const p = arenaToScreen(L, t.x, t.y);
+      const art = ERASER_ART[t.spec.eraserId];
+      const rpx = t.spec.radius * L.scale;
+      const a = rand(0, Math.PI * 2);
+      particles.push({
+        kind: 'crumb', x: p.x + Math.cos(a) * rpx * 0.8, y: p.y + Math.sin(a) * rpx * 0.8, vx: rand(-20, 20), vy: rand(-20, 20),
+        drag: 5, life: rand(0.8, 1.6), rot: rand(0, 6), vr: rand(-3, 3), size: rand(1.5, 3.2), color: art.rubber,
+      });
+    }
+  }
+
+  // the camera drifts toward the action and leans in when the tops get close
+  function followAction(world) {
+    if (reducedMotion() || cam.hold > 0) return;
+    const [a, b] = world.tops;
+    const pa = arenaToScreen(L, a.x, a.y), pb = arenaToScreen(L, b.x, b.y);
+    const mx = (pa.x + pb.x) / 2, my = (pa.y + pb.y) / 2;
+    const fx = L.cx + (mx - L.cx) * 0.35, fy = L.cy + (my - L.cy) * 0.35;
+    cam.fx += (fx - cam.fx) * 0.06;
+    cam.fy += (fy - cam.fy) * 0.06;
+    const d = Math.hypot(a.x - b.x, a.y - b.y);
+    cam.follow = world.over ? 1 : 1 + 0.07 * Math.max(0, 1 - d / 1.2);
+  }
+
+  // comic-book hit bursts
+  function drawComics() {
+    for (const c of comics) {
+      const k = c.t / c.life;
+      const pop = k < 0.2 ? 0.5 + (k / 0.2) * 0.7 : 1.2 - (k - 0.2) * 0.25;
+      const alpha = k > 0.7 ? (1 - k) / 0.3 : 1;
+      const size = Math.min(34, L.width / 16) * c.size;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, alpha);
+      ctx.translate(c.x, c.y - size * 0.9);
+      ctx.rotate(c.rot);
+      ctx.scale(pop, pop);
+      // jagged star burst
+      ctx.beginPath();
+      const spikes = 11;
+      for (let s2 = 0; s2 <= spikes * 2; s2++) {
+        const rr = s2 % 2 ? size * 0.75 : size * 1.35;
+        const ang = (s2 / (spikes * 2)) * Math.PI * 2;
+        const px = Math.cos(ang) * rr * 1.5, py = Math.sin(ang) * rr * 0.85;
+        s2 ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fillStyle = '#ffe14d';
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#161616';
+      ctx.stroke();
+      ctx.font = `900 ${size * 0.62}px ${HAND}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = size * 0.12;
+      ctx.strokeStyle = '#fff';
+      ctx.strokeText(c.word, 0, 1);
+      ctx.fillStyle = '#d62828';
+      ctx.fillText(c.word, 0, 1);
+      ctx.restore();
+    }
+  }
+
   // ---------- public draw calls ----------
   function drawBattle(world, frame) {
-    if (trailWorld !== world) { trailWorld = world; trails[0] = []; trails[1] = []; }
+    if (trailWorld !== world) {
+      trailWorld = world; trails[0] = []; trails[1] = [];
+      lastTip[0] = lastTip[1] = null;
+      if (marks) marks.getContext('2d').clearRect(0, 0, marks.width, marks.height);
+    }
     world.tops.forEach((t, i) => {
       const p = arenaToScreen(L, t.x, t.y);
       trails[i].push(p);
       if (trails[i].length > 14) trails[i].shift();
     });
+    followAction(world);
     begin();
+    if (trailWorld === world) drawMarks(world);
+    rimGlint();
     drawCrumbs(ctx, L, world.zones || [], world.time);
+    shedCrumbs(world);
     world.tops.forEach((t, i) => drawTrail(i, t));
     drawWaves();
     const fin = frame?.finish;
@@ -588,6 +776,7 @@ export function createRenderer(canvas) {
       if (!reducedMotion()) shake = Math.max(shake, 2.5);
     }
     drawParticles();
+    drawComics();
     overlays(frame);
     if (world.clash) drawClashMeter(world.clash, frame);
     if (fin) drawFinishOverlay(world, fin);
@@ -846,6 +1035,7 @@ export function createRenderer(canvas) {
   }
 
   function drawLaunch(launches, frame) {
+    cam.follow = null; cam.fx = L.cx; cam.fy = L.cy;
     begin();
     launches.forEach((s, i) => {
       if (!s) return;
@@ -921,6 +1111,7 @@ export function createRenderer(canvas) {
   }
 
   function drawIntro(p, data) {
+    cam.follow = null; cam.fx = L.cx; cam.fy = L.cy;
     begin();
     endFrame();
     paintIntro(ctx, L, p, data, clock);

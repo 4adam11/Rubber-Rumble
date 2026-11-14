@@ -72,13 +72,121 @@ export function createAudio() {
     o.stop(t + dur + 0.02);
   }
 
-  // rubber thud + a steel "ting" ringing out of the plate
-  function hit(impact) {
+  // a sound's left/right position: -1 left … 1 right
+  function panned(node, pan) {
+    if (!pan || !ctx.createStereoPanner) return node.connect(master);
+    const p = ctx.createStereoPanner();
+    p.pan.value = Math.max(-1, Math.min(1, pan));
+    node.connect(p).connect(master);
+    return p;
+  }
+
+  function burst(dur, type, freq, q, gain, pan = 0, when = 0, sweepTo = null) {
+    const t = ctx.currentTime + when;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuf;
+    const f = ctx.createBiquadFilter();
+    f.type = type; f.frequency.setValueAtTime(freq, t); f.Q.value = q;
+    if (sweepTo) f.frequency.exponentialRampToValueAtTime(sweepTo, t + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(Math.max(0.0002, gain), t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f).connect(g);
+    panned(g, pan);
+    src.start(t, Math.random() * 0.5);
+    src.stop(t + dur + 0.02);
+  }
+
+  function ping(freq, dur, gain, pan = 0, type = 'sine', when = 0, slideTo = null) {
+    const t = ctx.currentTime + when;
+    const o = ctx.createOscillator();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, gain), t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g);
+    panned(g, pan);
+    o.start(t);
+    o.stop(t + dur + 0.02);
+  }
+
+  // two rubber tops smacking together on a steel plate
+  function hit(impact, pan = 0, kind = 'rubber') {
     const k = Math.min(1, impact / 2);
-    tone(150 + Math.random() * 30, 0.12, 'sine', 0.25 + k * 0.35, 0, 60);
-    noise(0.05, 'bandpass', 900, 1.2, 0.2 + k * 0.3);
-    const base = 1800 + Math.random() * 500;
-    [1, 1.52, 2.36, 3.1].forEach((m, i) => tone(base * m, 0.25 + k * 0.5 - i * 0.05, 'sine', (0.05 + k * 0.07) / (i + 1)));
+    if (kind === 'metal') { // bouncing off the sharpener or the compass pin
+      ping(2400 + Math.random() * 300, 0.5 + k * 0.4, 0.12 + k * 0.1, pan, 'triangle');
+      ping(3900, 0.35, 0.06 + k * 0.05, pan);
+      ping(6100, 0.2, 0.04, pan);
+      burst(0.03, 'highpass', 4000, 0.7, 0.4 + k * 0.3, pan);
+      return;
+    }
+    if (kind === 'shield') { // glassy graphite shield
+      [1800, 2700, 4050].forEach((f, i) => ping(f, 0.4 - i * 0.08, 0.08 / (i + 1), pan, 'sine', i * 0.01));
+      return;
+    }
+    ping(125 + Math.random() * 25, 0.14 + k * 0.08, 0.3 + k * 0.45, pan, 'sine', 0, 52);       // body thump
+    burst(0.05 + k * 0.04, 'lowpass', 1700 + k * 900, 0.8, 0.35 + k * 0.45, pan);             // rubber slap
+    burst(0.015, 'highpass', 5200, 0.7, 0.18 + k * 0.25, pan);                                // graphite tick
+    const base = 1350 + Math.random() * 200;                                                  // the plate rings out
+    [[1, 0.5], [2.76, 0.35], [5.4, 0.22], [8.93, 0.12]].forEach(([m, d]) =>
+      ping(base * m, (0.25 + k * 0.6) * (0.4 + d), (0.035 + k * 0.06) * d, pan * 0.6));
+  }
+
+  // per-top spin voice: graphite scratching the steel, pulsing at the rotation rate
+  const spinners = [null, null];
+  let rattleClock = [0, 0];
+  function spinVoice() {
+    const out = ctx.createGain();
+    out.gain.value = 0;
+    let tail = out;
+    let panNode = null;
+    if (ctx.createStereoPanner) { panNode = ctx.createStereoPanner(); out.connect(panNode); tail = panNode; }
+    tail.connect(master);
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuf;
+    src.loop = true;
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 900;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.3;
+    const am = ctx.createGain(); am.gain.value = 0.55;                // rotation pulse
+    const lfo = ctx.createOscillator(); lfo.type = 'triangle';
+    const lfoAmt = ctx.createGain(); lfoAmt.gain.value = 0.45;
+    lfo.connect(lfoAmt).connect(am.gain);
+    src.connect(hp).connect(bp).connect(am).connect(out);
+    const ring = ctx.createBiquadFilter(); ring.type = 'bandpass'; ring.Q.value = 28; ring.frequency.value = 3100;
+    const ringGain = ctx.createGain(); ringGain.gain.value = 0;      // steel plate singing along
+    src.connect(ring).connect(ringGain).connect(out);
+    const body = ctx.createOscillator(); body.type = 'triangle';     // low body hum
+    const bodyGain = ctx.createGain(); bodyGain.gain.value = 0;
+    body.connect(bodyGain).connect(out);
+    src.start(); lfo.start(); body.start();
+    return { out, panNode, bp, lfo, ringGain, body, bodyGain };
+  }
+
+  function spin(i, frac, { wobble = 0, pan = 0 } = {}) {
+    if (!ctx) return;
+    const v = Math.max(0, Math.min(1, frac));
+    let s = spinners[i];
+    if (!s) s = spinners[i] = spinVoice();
+    const t = ctx.currentTime;
+    const rot = 5 + v * 38;                                            // rotations per second
+    s.bp.frequency.setTargetAtTime(1500 + v * 4200, t, 0.06);
+    s.lfo.frequency.setTargetAtTime(rot, t, 0.06);
+    s.ringGain.gain.setTargetAtTime(v * 0.5, t, 0.1);
+    s.body.frequency.setTargetAtTime(55 + v * 110 + i * 7, t, 0.06);
+    s.bodyGain.gain.setTargetAtTime(v > 0.01 ? 0.18 + v * 0.15 : 0, t, 0.08);
+    s.out.gain.setTargetAtTime(v > 0.01 ? 0.05 + v * 0.11 : 0, t, 0.08);
+    if (s.panNode) s.panNode.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)), t, 0.05);
+    // a wobbling top rattles: little irregular clicks of the tip hopping
+    if (v > 0.01 && wobble > 0.35 && !muted) {
+      rattleClock[i] -= 1 / 60;
+      if (rattleClock[i] <= 0) {
+        burst(0.02, 'bandpass', 2500 + Math.random() * 2000, 2, 0.06 + wobble * 0.12, pan);
+        rattleClock[i] = 0.25 / (wobble * (0.6 + Math.random()));
+      }
+    }
   }
 
   function hum(i, frac) {
@@ -140,7 +248,11 @@ export function createAudio() {
     if (on && grindNode) grindNode.f.frequency.setTargetAtTime(1100 + Math.random() * 900, ctx.currentTime, 0.03);
   }
 
-  function silence() { hum(0, 0); hum(1, 0); grind(false); }
+  function silence() {
+    hums.forEach((h, i) => h && hum(i, 0));
+    spinners.forEach((s, i) => s && spin(i, 0));
+    grind(false);
+  }
 
   function say(text, { rate = 0.95, pitch = 0.75 } = {}) {
     if (muted || !text) return;
@@ -167,6 +279,8 @@ export function createAudio() {
     silence,
     say,
     clack(impact) { if (ready()) hit(impact); },
+    hit(impact, pan = 0, kind = 'rubber') { if (ready()) hit(impact, pan, kind); },
+    spin,
     boom() {
       if (!ready()) return;
       tone(70, 0.6, 'sine', 0.5, 0, 38);
