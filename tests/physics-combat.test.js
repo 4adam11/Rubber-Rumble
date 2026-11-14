@@ -208,3 +208,16 @@ test('defence-type erasers brace: they take less damage from the same hit', () =
   const plain = run('balance');
   assert.ok(braced < plain * 0.9, `braced ${braced} plain ${plain}`);
 });
+
+test('a second snap-level hit on a snapped lead crumbles the eraser: snap KO', () => {
+  const w = snapWorld(1.25 * SNAP_AT);
+  steps(w, 0.4);
+  assert.equal(w.tops[1].leadSnapped, true);
+  assert.equal(w.over, false);
+  w.events.length = 0;
+  Object.assign(w.tops[0], { x: -0.25, y: 0, vx: 1.4 * SNAP_AT, vy: 0 });
+  Object.assign(w.tops[1], { x: 0.25, y: 0, vx: 0, vy: 0, wobble: 0, rpm: 900 });
+  steps(w, 0.4);
+  assert.ok(w.events.some((e) => e.type === 'crumble' && e.i === 1));
+  assert.deepEqual(w.result, { winner: 0, reason: 'snapko' });
+});

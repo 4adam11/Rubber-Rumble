@@ -168,6 +168,20 @@ export function createRenderer(canvas) {
           cam.target = 1.18; cam.fx = p.x; cam.fy = p.y; cam.hold = 0.55;
         }
         slowmo(0.3, 0.6);
+      } else if (e.type === 'crumble') {
+        // Snap KO: the eraser breaks apart into crumbs
+        const p = topScreen(world, e.i);
+        const rpx = world.tops[e.i].spec.radius * L.scale;
+        shards(p.x, p.y, '#2b2b30');
+        for (let k = 0; k < 26; k++) {
+          const a = rand(0, Math.PI * 2), sp = rand(120, 420);
+          particles.push({ kind: 'chip', x: p.x, y: p.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 100, g: 600, drag: 1, life: rand(0.8, 1.4), rot: rand(0, 6), vr: rand(-15, 15), size: rand(6, 14) });
+        }
+        wave(p.x, p.y, rpx, rpx * 7, 0.8, '#ffffff', 8);
+        flash = 0.8;
+        if (!reducedMotion()) { shake = 18; cam.target = 1.22; cam.fx = p.x; cam.fy = p.y; cam.hold = 0.8; }
+        slowmo(0.25, 0.9);
+        banner('SNAP KO!', { x: p.x, y: p.y - 70, color: '#b3261e', size: 46, life: 1.6 });
       } else if (e.type === 'special') {
         const p = topScreen(world, e.i);
         const a = ABILITIES[e.kind];

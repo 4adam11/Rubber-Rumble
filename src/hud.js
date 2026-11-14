@@ -138,23 +138,17 @@ export function createHud() {
     ctx.fillStyle = '#fff';
     ctx.fillText(p.name, nameX, ny);
     const nameW = ctx.measureText(p.name).width;
-    for (let k = 0; k < 2; k++) {
-      const mx = mirror ? nameX - nameW - 14 - k * 16 : nameX + nameW + 14 + k * 16;
+    // point pips: first to 4 wins the match
+    const target = p.target || 4;
+    for (let k = 0; k < target; k++) {
+      const mx = mirror ? nameX - nameW - 12 - k * 13 : nameX + nameW + 12 + k * 13;
       ctx.beginPath();
-      ctx.arc(mx, ny, 6, 0, Math.PI * 2);
-      ctx.fillStyle = k < p.wins ? '#ffd23f' : 'rgba(0,0,0,0.45)';
+      ctx.arc(mx, ny, 5, 0, Math.PI * 2);
+      ctx.fillStyle = k < p.points ? '#ffd23f' : 'rgba(0,0,0,0.45)';
       ctx.fill();
       ctx.strokeStyle = '#161616';
       ctx.lineWidth = 1.5;
       ctx.stroke();
-      if (k < p.wins) {
-        ctx.fillStyle = '#7a4b00';
-        ctx.font = `700 9px ${SANS}`;
-        ctx.textAlign = 'center';
-        ctx.fillText('★', mx, ny + 0.5);
-        ctx.font = `700 ${compact ? 14 : 17}px ${HAND}`;
-        ctx.textAlign = mirror ? 'right' : 'left';
-      }
     }
 
     // ability chip

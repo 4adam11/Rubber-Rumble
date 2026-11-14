@@ -7,7 +7,7 @@ import {
 import { cpuLaunch, createCpu, pickCombo, pickAbility } from './ai.js';
 import { createRenderer, PLAYER_COLORS, arenaToScreen } from './render.js';
 import { createInput, specialButton } from './input.js';
-import { createMatch, roundLabel } from './match.js';
+import { createMatch, roundLabel, POINTS, FINISH_NAMES, TARGET_POINTS } from './match.js';
 import { createUI } from './ui.js';
 import { createAudio } from './audio.js';
 import { loadSettings, saveSettings } from './settings.js';
@@ -201,6 +201,7 @@ function stepBattle(dt) {
     for (const e of w.events) {
       if (e.type === 'hit') { audio.clack(e.impact); if (e.impact > 0.8) buzz(15); }
       else if (e.type === 'snap') { audio.snap(); buzz([60, 40, 90]); }
+      else if (e.type === 'crumble') { audio.snap(); audio.clack(2); buzz([90, 50, 140]); }
       else if (e.type === 'special') { audio.special(); buzz(25); }
       else if (e.type === 'unlock') { audio.perfect(); if (!isCpu(e.i)) buzz([30, 40, 30]); }
       else if (e.type === 'block' || e.type === 'bump') audio.clack(1);
@@ -223,11 +224,11 @@ function stepBattle(dt) {
 }
 
 const REASON = {
-  stopped: 'ran out of health', tipped: 'tipped over', ringout: 'got knocked out of the arena',
+  stopped: 'ran out of health', tipped: 'tipped over', ringout: 'got knocked out of the arena', snapko: 'crumbled: lead snapped twice',
   time: 'had more health at the bell', draw: 'Both tops gave up together. Replay!',
 };
 
-const SHORT = { stopped: 'outspun', tipped: 'rival tipped over', ringout: 'knock-out', time: 'on time' };
+const SHORT = { stopped: 'Spin Finish', tipped: 'Tip Finish', ringout: 'Knock-Out', time: 'Spin Finish', snapko: 'Snap KO' };
 
 function playerName(i) {
   if (game.config.mode === 'cpu') return i === 0 ? 'You' : 'CPU';
@@ -251,12 +252,12 @@ function endRound(result) {
   input.setPhase('menu');
   audio.silence();
   g.match.record(result);
-  const big = result.reason === 'ringout' ? 'KNOCK-OUT!' : null;
   if (result.winner === null) {
     renderer.banner('Draw!', { sub: describe(result), size: 64, life: 2 });
   } else {
-    renderer.banner(big || `${playerName(result.winner)} ${winsWord(result.winner)}!`,
-      { sub: describe(result), color: PLAYER_COLORS[result.winner], size: 64, life: 2 });
+    const pts = POINTS[result.reason] ?? 1;
+    renderer.banner(`${FINISH_NAMES[result.reason].toUpperCase()}! +${pts}`,
+      { sub: `${playerName(result.winner)} · ${describe(result)}`, color: PLAYER_COLORS[result.winner], size: 64, life: 2 });
   }
   buzz(result.winner === 0 || game.config.mode === '2p' ? [40, 60, 40] : 120);
 }
@@ -274,14 +275,15 @@ function showResult() {
     }
     ui.show('match', {
       headline: g.config.mode === 'cpu' ? (st.winner === 0 ? 'You win the match!' : 'CPU wins the match') : `Player ${st.winner + 1} wins!`,
-      color: PLAYER_COLORS[st.winner], names, wins: st.wins,
-      rounds: st.rounds.map((x, k) => `${roundLabel(st.rounds, k)}: ${x.winner === null ? 'draw' : `${names[x.winner]} (${SHORT[x.reason]})`}`),
+      color: PLAYER_COLORS[st.winner], names, wins: st.points,
+      rounds: st.rounds.map((x, k) => `${roundLabel(st.rounds, k)}: ${x.winner === null ? 'draw' : `${names[x.winner]} · ${SHORT[x.reason]} +${x.points}`}`),
     });
   } else {
     ui.show('round', {
       headline: r.winner === null ? 'Draw!' : `${names[r.winner]} ${winsWord(r.winner)} ${roundLabel(st.rounds, st.rounds.length - 1).replace(' (replay)', '').toLowerCase()}!`,
-      sub: describe(r), color: r.winner === null ? '#1f2a44' : PLAYER_COLORS[r.winner],
-      names, wins: st.wins, draw: r.winner === null,
+      sub: r.winner === null ? describe(r) : `${SHORT[r.reason]} +${st.rounds[st.rounds.length - 1].points} · first to ${TARGET_POINTS} points wins`,
+      color: r.winner === null ? '#1f2a44' : PLAYER_COLORS[r.winner],
+      names, wins: st.points, draw: r.winner === null,
     });
   }
 }
@@ -473,7 +475,8 @@ function hudData() {
         color: PLAYER_COLORS[i],
         eraserId: game.specs[i].eraserId,
         health: t ? t.rpm / t.spec.maxRPM : null,
-        wins: game.match.state().wins[i],
+        points: game.match.state().points[i],
+        target: TARGET_POINTS,
         ability: { kind: game.config.abilities[i], unlocked: !!t?.unlocked, used: !!t?.specialUsed, key: keys[i] },
       };
     }),

@@ -1,18 +1,30 @@
-// Best-of-3 scoring. Draws are replayed and never count.
-export const WINS_NEEDED = 2;
+// Points scoring, Beyblade-X style: big finishes score more. First to TARGET_POINTS wins.
+// Draws are replayed and score nothing.
+export const POINTS = { stopped: 1, time: 1, tipped: 2, ringout: 2, snapko: 3 };
+export const TARGET_POINTS = 4;
 
-export function createMatch() {
+export const FINISH_NAMES = {
+  stopped: 'Spin Finish', time: 'Spin Finish', tipped: 'Tip Finish', ringout: 'Knock-Out', snapko: 'Snap KO',
+};
+
+export function createMatch({ target = TARGET_POINTS } = {}) {
+  const points = [0, 0];
   const wins = [0, 0];
   const rounds = [];
   let winner = null;
-  const state = () => ({ wins: [...wins], rounds: [...rounds], over: winner !== null, winner });
+  const state = () => ({
+    points: [...points], wins: [...wins], rounds: rounds.map((r) => ({ ...r })),
+    over: winner !== null, winner, target,
+  });
   return {
     record(result) {
       if (winner !== null) return state();
-      rounds.push(result);
-      if (result.winner === 0 || result.winner === 1) {
+      const scored = result.winner === 0 || result.winner === 1 ? POINTS[result.reason] ?? 1 : 0;
+      rounds.push({ ...result, points: scored });
+      if (scored) {
+        points[result.winner] += scored;
         wins[result.winner]++;
-        if (wins[result.winner] >= WINS_NEEDED) winner = result.winner;
+        if (points[result.winner] >= target) winner = result.winner;
       }
       return state();
     },

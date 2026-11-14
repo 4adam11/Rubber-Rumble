@@ -236,7 +236,14 @@ function collide(w) {
     const shove = (2 * other.spec.mass) / (t.spec.mass + other.spec.mass); // heavy tops shake less
     if (blocked[i]) return; // the shield takes the whole hit
     t.wobble += impact * CONST.HIT_WOBBLE * rammed[i] * shove * statMul(t.spec.stability, CONST.STAB_K);
-    if (!t.leadSnapped && impact * rammed[i] > CONST.SNAP_BASE * t.spec.durability) {
+    const snapHit = impact * rammed[i] > CONST.SNAP_BASE * t.spec.durability;
+    if (t.leadSnapped && snapHit && !t.crumbled) {
+      // second snap on a broken lead: the eraser crumbles (Snap KO)
+      t.crumbled = true;
+      w.events.push({ type: 'crumble', i });
+      return;
+    }
+    if (!t.leadSnapped && snapHit) {
       t.leadSnapped = true;
       t.rpm *= 0.75;
       t.wobble += 0.3;
@@ -271,6 +278,7 @@ function bounceOffBumpers(w) {
 }
 
 function lossReason(t) {
+  if (t.crumbled) return 'snapko';
   if (t.rpm <= 0) return 'stopped';
   if (t.wobble >= 1) return 'tipped';
   if (Math.hypot(t.x, t.y) > CONST.R + t.spec.radius) return 'ringout';
