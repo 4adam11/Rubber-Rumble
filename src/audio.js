@@ -1,5 +1,13 @@
 // WebAudio sound effects + a text-to-speech announcer. Every call is a no-op until unlock() and when muted.
 
+// The announcer's voice: Microsoft David (Windows) whenever the device has it; otherwise an Indian
+// English voice, then British, then any English voice (phones don't have David).
+export function chooseVoice(vs) {
+  const list = Array.isArray(vs) ? vs : [];
+  return list.find((v) => /microsoft david/i.test(v.name || ''))
+    || list.find((v) => /en[-_]IN/i.test(v.lang)) || list.find((v) => /^en[-_]GB/i.test(v.lang)) || list.find((v) => /^en/i.test(v.lang)) || null;
+}
+
 export function createAudio() {
   let ctx = null, master = null, noiseBuf = null;
   let muted = false;
@@ -9,9 +17,7 @@ export function createAudio() {
 
   function pickVoice() {
     try {
-      const vs = window.speechSynthesis?.getVoices?.() || [];
-      // an Indian English voice if the device has one, otherwise any English voice
-      voice = vs.find((v) => /en[-_]IN/i.test(v.lang)) || vs.find((v) => /^en[-_]GB/i.test(v.lang)) || vs.find((v) => /^en/i.test(v.lang)) || null;
+      voice = chooseVoice(window.speechSynthesis?.getVoices?.() || []);
     } catch { voice = null; }
   }
 
