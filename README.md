@@ -2,7 +2,7 @@
 
 The school-desk game where you push a sharpened pencil lead into the back of an eraser and spin it like a top, now in the browser. Two tops battle in a steel thali. The last one spinning wins.
 
-- **Play vs Computer** (Easy / Medium / Hard), **2 Players on one device**, or **Play with Friends**: 2–4 players online, each on their own phone or laptop, joined with a room code.
+- **Play vs Computer** (Rising, a level that grows with you, or Easy / Medium / Hard), **2 Players on one device**, or **Play with Friends**: 2–4 players online, each on their own phone or laptop, joined with a room code.
 - Works on phones (touch, vibration, add-to-home-screen) and laptops (keyboard/mouse). No install, no account, no libraries.
 - **Live:** https://rubber-rumble.vercel.app
 
@@ -28,9 +28,21 @@ Balance check (thousands of CPU-vs-CPU rounds, with abilities, across all arenas
 node tools/balance.mjs 200 1 all   # rounds per matchup, seed, arena (thali|tiffin|geometry|all)
 ```
 
+Two more checks, used when parts, combos or tournament opponents change:
+
+```bash
+node tools/pairs.mjs 20 1 --compare tools/baseline-pairs.json
+```
+
+```bash
+node tools/kit-check.mjs 200 1
+```
+
+The first plays every pair against every other and checks no pair is stronger or weaker than the recorded range allows. The second checks each tournament opponent can be beaten with the kit a player owns on reaching it. `tools/try-combo.mjs` tries different stat swaps for one standard combo.
+
 ## How to play
 
-1. **Build a top**: pick an eraser (the body) and a pencil lead (the tip). The stat bars fill and empty as you swap parts.
+1. **Build a top**: pick an eraser (the body) and a pencil lead (the tip). The stat bars fill and empty as you swap parts. Every pair makes a combo. Playing alone you start with a small kit and win more parts in the School Tournament; with friends everything is unlocked.
 2. **Pick your comeback ability** (see below) and an **arena**.
 3. **Place** your top on your side of the rim.
 4. **Twist**: on a phone, put one thumb on each of the two grips stacked at the bottom of the screen, pull them apart (top grip one way, bottom grip the other) and **hold**: the spin charges while you hold, and phones get 3.5 s to charge. On a keyboard, mash your two keys one after the other.
@@ -88,6 +100,29 @@ Never put these keys in the code: the GitHub repo is public. If the relay can't 
 
 Five rungs, each with a twist, saved as you go: Class Bully → The Backbencher (oily desk) → Class Monitor (ceiling fan) → The Topper (earthquake drill) → **The Principal** (boss with a giant eraser).
 
+### The earned kit
+
+Playing alone (vs Computer, the tournament, or an online room with no other human in it) you build from the parts you have **won**. Beat an opponent and their eraser, lead and ability are yours:
+
+| When | You gain | Tops you can build |
+|---|---|---|
+| Start | Apsara Non-Dust, Doms Neon Hexagon · Nataraj HB, Doms Y1+ · Recentre, Second Wind | 4 |
+| Beat Class Bully | Nataraj 621 Plasto · Platinum · Smash Dash | 9 |
+| Beat The Backbencher | Fruit-Scented Fancy Eraser · Crumb Trail | 12 |
+| Beat Class Monitor | Camlin Dust-Free · Camlin Exam | 20 |
+| Beat The Topper | Faber-Castell Dust-Free · Faber 2B · Graphite Shield | 30 |
+| Beat The Principal | Apsara Jumbo · Absolute · Plant | 42 |
+
+- A combo is on as soon as you own both of its parts, so every win also unlocks a batch of combos.
+- The kit is worked out from your tournament progress; nothing is bought, and coins stay for looks only.
+- In solo games the computer builds only from parts you own.
+- **With two or more humans** (2 Players on one device, or an online room with a friend in it) everyone has every part, ability and combo.
+- Coins are paid for real opposition only: 2 Players on one device pays nothing, and an online match pays only if two or more humans started it.
+
+### Rising difficulty
+
+Play vs Computer offers **Rising**: 7 levels (1 plays like Easy, 4 like Medium, 7 like Hard). You start at level 2; two match wins in a row move up a level and two losses in a row move down. A win pays 30 coins at level 1 up to 80 at level 7. Easy, Medium and Hard are still there.
+
 ## Stationery Shop
 
 Win matches to earn pocket money (bonuses for Flawless, Snap KO, Rubberality and tournament rungs). Spend it on eraser sleeves (Galaxy, Tiger, Tiranga, Neon, Gold Foil) and pencil paints (Rainbow, Camo, Gold). Looks only: every part stays free.
@@ -142,17 +177,21 @@ Win matches to earn pocket money (bonuses for Flawless, Snap KO, Rubberality and
 | Sleepy Bench ⚠ | Apsara Jumbo + Faber-Castell 2B | Speed −2, Stability −2 |
 | Hindustan Family | any Apsara/Nataraj + any Apsara/Nataraj | Stamina +1, Durability +1 |
 
+Those are the **star combos** (★, from matching brands) and the one bad combo. The other 28 pairs each have a **standard combo**: a name, one stat +1 and one stat −1 (for example Paper Plane: Glide +1, Defense −1). The full list is in `src/parts.js`.
+
 Brand names are plain part names only. The erasers and pencils are drawn from scratch in the real products' colours; there are no logos or product photos, and this original fan game has no affiliation with any brand.
 
 ## Code map
 
 | File | What it does |
 |---|---|
-| `src/parts.js` | Erasers, leads, combos, `buildTop()` |
+| `src/parts.js` | Erasers, leads, a combo for every pair, `buildTop()` |
+| `src/kit.js` | The earned kit: what a solo player owns, from tournament progress; full kit for 2+ humans |
+| `src/rising.js` | Rising difficulty: the level and when it moves |
 | `src/abilities.js`, `src/arenas.js` | Comeback abilities and arena layouts |
 | `src/physics.js` | Bowl, health/spin drain, wobble, collisions (every pair, 2–4 tops), lead snap, abilities, slowing patches, bumpers (tuning in `CONST`) |
 | `src/launch.js` | Twist-launch state machine and touch/mouse stroke detectors |
-| `src/ai.js` | Computer opponent: combo + ability picks, launches, steering |
+| `src/ai.js` | Computer opponent: combo + ability picks (inside the player's kit), launches, steering; `profile()` for every difficulty and Rising level |
 | `src/match.js` | Points scoring (first to 4) |
 | `src/finisher.js`, `src/announcer.js` | FINISH IT! sequences; announcer lines |
 | `src/tournament.js`, `src/economy.js` | School Tournament ladder; coins and the shop |

@@ -7,6 +7,7 @@ import { paintArenaThumb } from './arena-art.js';
 import { DEMOS, drawDemo } from './demos.js';
 import { RUNGS, MODIFIERS } from './tournament.js';
 import { SHOP, owns } from './economy.js';
+import { holderOf, rewardFor } from './kit.js';
 
 const ARCH = { attack: 'Attack', defense: 'Defense', stamina: 'Stamina', balance: 'Balance', wildcard: 'Wildcard' };
 const STATS = [['attack', 'Attack'], ['defense', 'Defense'], ['stamina', 'Stamina'], ['balance', 'Balance'], ['speed', 'Speed']];
@@ -75,9 +76,16 @@ export function createUI(root, handlers, opts = {}) {
     const { action, value } = el.dataset;
     handlers.click?.();
     if (action === 'pick-eraser' || action === 'pick-lead') {
-      updatePicker(action === 'pick-eraser' ? 'eraser' : 'lead', value);
+      const kind = action === 'pick-eraser' ? 'eraser' : 'lead';
+      if (lockedPart(kind, value)) { // not won yet: say who holds it (the cup has no room for the words)
+        const ll = kind === 'lead' ? root.querySelector('.lead-label') : null;
+        if (ll) ll.innerHTML = `<b>${esc(LEADS.find((l) => l.id === value)?.name || '')}</b> · ${lockLine('lead', value)}`;
+        return;
+      }
+      updatePicker(kind, value);
       return;
     }
+    if (action === 'pick-ability' && choice?.kit && !choice.kit.abilities.includes(value)) return;
     if (action === 'ready') { handlers.action('ready', { eraserId: picker.eraserId, leadId: picker.leadId }); return; }
     if (action === 'pick-ability' || action === 'pick-arena') { select(value); return; }
     if (action === 'howto-mode') { howto({ mode: value }); return; }
@@ -103,6 +111,8 @@ export function createUI(root, handlers, opts = {}) {
         <img class="title-art" src="assets/icon.svg" alt="Rubber Rumble logo" width="120" height="120">
         <h1 class="logo">Rubber <span>Rumble</span></h1>
         <p class="tagline">Eraser top. Pencil-lead tip. One steel thali. Last one spinning wins.</p>
+        ${d.kitNote ? `<div class="kit-note"><b>New!</b> Win parts in the School Tournament: beat an opponent and their eraser is yours. With friends you still have everything.
+          <button class="btn btn-small" data-action="kit-note-ok">Got it</button></div>` : ''}
         <div class="stack">
           <button class="btn btn-primary" data-action="play-cpu">Play vs Computer</button>
           <button class="btn btn-friends" data-action="friends">👫 Play with Friends <small>2–4 players · join with a code</small></button>
@@ -117,11 +127,15 @@ export function createUI(root, handlers, opts = {}) {
       </div>`, 'with-backdrop');
   }
 
-  function difficulty() {
+  function difficulty(d = {}) {
+    const level = d.rising?.level ?? 2;
     mount('difficulty', `
       <div class="sheet">
         <h2>Pick your rival</h2>
         <div class="stack">
+          <button class="btn btn-card btn-rising" data-action="difficulty" data-value="rising">
+            <strong>Rising <em class="pill">Recommended</em></strong><small>Grows with you: two wins in a row and it gets better. Now at level ${level} of 7.</small>
+          </button>
           ${DIFF.map(([id, name, desc]) => `
             <button class="btn btn-card" data-action="difficulty" data-value="${id}">
               <strong>${name}</strong><small>${desc}</small>
@@ -142,10 +156,21 @@ export function createUI(root, handlers, opts = {}) {
   }
 
   function comboHtml(spec) {
-    return spec.combo
-      ? `<div class="sticky ${spec.combo.bad ? 'sticky-bad' : ''}"><strong>${spec.combo.bad ? '⚠ ' : '★ '}${esc(spec.combo.name)}</strong><span>${esc(spec.combo.desc)}</span></div>`
-      : '<div class="sticky sticky-none"><span>No combo yet. Try matching brands!</span></div>';
+    // every pair has a combo: ★ star combos come from matching brands, the rest are plain notes
+    const c = spec.combo;
+    if (!c) return '';
+    const cls = c.bad ? 'sticky-bad' : c.star ? '' : 'sticky-std';
+    return `<div class="sticky ${cls}"><strong>${c.bad ? '⚠ ' : c.star ? '★ ' : ''}${esc(c.name)}</strong><span>${esc(c.desc)}</span></div>`;
   }
+
+  // a part the solo player has not won yet (the picker is given their kit; no kit = nothing locked)
+  function lockedPart(kind, id) {
+    const list = picker?.kit?.[kind === 'eraser' ? 'erasers' : 'leads'];
+    return !!list && !list.includes(id);
+  }
+  // what the player owns comes first, so on a phone it isn't hidden between padlocks
+  const ownedFirst = (list, isLocked) => [...list].sort((a, b) => Number(isLocked(a)) - Number(isLocked(b)));
+  const lockLine = (kind, id) => `🔒 Beat ${esc(holderOf(kind, id) || 'the School Tournament')} to win this`;
 
   function leadLabel(id) {
     const l = LEADS.find((x) => x.id === id);
@@ -179,22 +204,28 @@ export function createUI(root, handlers, opts = {}) {
           <section class="tray">
             <div class="tape">Erasers <small>the body</small></div>
             <div class="slots">
-              ${ERASERS.map((e) => `
-                <button class="slot ${e.id === d.eraserId ? 'is-on' : ''}" data-action="pick-eraser" data-value="${e.id}" aria-pressed="${e.id === d.eraserId}" title="${esc(e.note)}">
+              ${ownedFirst(ERASERS, (e) => lockedPart('eraser', e.id)).map((e) => {
+                const lock = lockedPart('eraser', e.id);
+                return `
+                <button class="slot ${e.id === d.eraserId ? 'is-on' : ''} ${lock ? 'is-locked' : ''}" data-action="pick-eraser" data-value="${e.id}" aria-pressed="${e.id === d.eraserId}" ${lock ? 'aria-disabled="true"' : ''} title="${esc(e.note)}">
                   <img src="${eraserThumb(e.id, d.skin)}" alt="" width="150" height="100">
                   <span class="slot-name">${esc(e.name)}</span>
-                  <span class="slot-type">${ARCH_ICON[e.archetype]} ${ARCH[e.archetype]}</span>
-                </button>`).join('')}
+                  ${lock ? `<span class="lock-line">${lockLine('eraser', e.id)}</span>` : `<span class="slot-type">${ARCH_ICON[e.archetype]} ${ARCH[e.archetype]}</span>`}
+                </button>`;
+              }).join('')}
             </div>
           </section>
           <section class="cup">
             <div class="tape">Pencil leads <small>the tip</small></div>
             <div class="cup-pencils">
-              ${LEADS.map((l) => `
-                <button class="cup-pencil ${l.id === d.leadId ? 'is-on' : ''}" data-action="pick-lead" data-value="${l.id}" aria-pressed="${l.id === d.leadId}" aria-label="${esc(l.name)}">
+              ${ownedFirst(LEADS, (l) => lockedPart('lead', l.id)).map((l) => {
+                const lock = lockedPart('lead', l.id);
+                return `
+                <button class="cup-pencil ${l.id === d.leadId ? 'is-on' : ''} ${lock ? 'is-locked' : ''}" data-action="pick-lead" data-value="${l.id}" aria-pressed="${l.id === d.leadId}" ${lock ? 'aria-disabled="true"' : ''} aria-label="${esc(l.name)}${lock ? `. ${lockLine('lead', l.id)}` : ''}" title="${lock ? lockLine('lead', l.id) : esc(l.note)}">
                   <img src="${pencilThumb(l.id, d.skin)}" alt="" width="40" height="210">
-                  <span>${esc(SHORT_LEAD[l.id] || l.name)}</span>
-                </button>`).join('')}
+                  <span>${lock ? '🔒' : esc(SHORT_LEAD[l.id] || l.name)}</span>
+                </button>`;
+              }).join('')}
               <div class="cup-front" aria-hidden="true"></div>
             </div>
             <p class="lead-label">${leadLabel(d.leadId)}</p>
@@ -317,16 +348,19 @@ export function createUI(root, handlers, opts = {}) {
   }
 
   function abilityScreen(d) {
-    choice = { selected: d.selected };
+    choice = { selected: d.selected, kit: d.kit || null };
+    const lockedAbility = (id) => !!d.kit && !d.kit.abilities.includes(id);
     mount('ability', `
       <div class="sheet sheet-wide" style="--pc:${d.color}">
         <h2><span style="color:${d.color}">${esc(d.who)}</span> pick your comeback</h2>
         <p class="note">It unlocks when your health drops to 30%. Use it once to turn the fight around.</p>
         <div class="ability-grid">
-          ${ABILITY_IDS.map((id) => {
+          ${ownedFirst(ABILITY_IDS, lockedAbility).map((id) => {
             const a = ABILITIES[id];
-            return `<button class="ability-card ${id === d.selected ? 'is-on' : ''}" data-action="pick-ability" data-value="${id}" aria-pressed="${id === d.selected}" style="--ac:${a.color}">
+            const lock = lockedAbility(id);
+            return `<button class="ability-card ${id === d.selected ? 'is-on' : ''} ${lock ? 'is-locked' : ''}" data-action="pick-ability" data-value="${id}" aria-pressed="${id === d.selected}" ${lock ? 'aria-disabled="true"' : ''} style="--ac:${a.color}">
               <span class="ability-icon">${a.icon}</span><b>${esc(a.name)}</b><small>${esc(a.desc)}</small>
+              ${lock ? `<span class="lock-line">${lockLine('ability', id)}</span>` : ''}
             </button>`;
           }).join('')}
         </div>
@@ -363,6 +397,12 @@ export function createUI(root, handlers, opts = {}) {
   function ladder(d) {
     const p = d.progress || { rung: 0, champion: false };
     const DIFF_LABEL = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
+    // what beating rung i wins: that opponent's eraser, lead and ability (less anything already owned)
+    const prizeHtml = (i) => {
+      const w = rewardFor(i, { rung: i, champion: false });
+      const items = [...w.erasers, ...w.leads, ...w.abilities];
+      return items.length ? `<small class="rung-prize">🎒 Prize: ${items.map(esc).join(' · ')}</small>` : '';
+    };
     mount('ladder', `
       <div class="sheet sheet-ladder">
         <h2>🏆 School Tournament</h2>
@@ -380,6 +420,7 @@ export function createUI(root, handlers, opts = {}) {
                 <b>${i + 1}. ${esc(r.name)}</b>
                 <small>${esc(r.title)} · ${DIFF_LABEL[r.difficulty]}</small>
                 ${mod ? `<span class="rung-mod">${mod.icon} ${esc(mod.name)}</span>` : ''}
+                ${beaten ? '' : prizeHtml(i)}
               </div>
               ${locked ? '<span class="rung-lock">🔒</span>'
                 : `<button class="btn ${current ? 'btn-primary' : ''} rung-go" data-action="fight-rung" data-value="${i}">${current ? 'Fight!' : 'Replay'}</button>`}
@@ -450,7 +491,9 @@ export function createUI(root, handlers, opts = {}) {
         ${d.extra ? `<p class="sub extra">${esc(d.extra)}</p>` : ''}
         ${scoreLine(d)}
         <ul class="rounds">${d.rounds.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
-        ${d.coins ? `<div class="coins-earned"><b>🪙 +${d.coins.total} pocket money</b>${d.coins.lines.map((l) => `<span>${esc(l.label)} +${l.coins}</span>`).join('')}<small>You have ${d.coins.balance} coins</small></div>` : ''}
+        ${wonHtml(d.won)}
+        ${d.risingMoved ? `<p class="sub rising-note">${d.risingMoved.moved > 0 ? '📈 The computer is getting better' : '📉 The computer eases off'}: Rising level ${d.risingMoved.level} of 7.</p>` : ''}
+        ${d.coins && d.coins.total > 0 ? `<div class="coins-earned"><b>🪙 +${d.coins.total} pocket money</b>${d.coins.lines.map((l) => `<span>${esc(l.label)} +${l.coins}</span>`).join('')}<small>You have ${d.coins.balance} coins</small></div>` : ''}
         ${d.waiting ? waitingRow() : `<div class="stack">
           ${d.buttons ? d.buttons.map((b, k) => `<button class="btn ${b.primary ? 'btn-primary' : k === d.buttons.length - 1 ? 'btn-ghost' : ''}" data-action="${b.action}" ${b.primary ? 'autofocus' : ''}>${esc(b.label)}</button>`).join('') : `
           <button class="btn btn-primary" data-action="rematch" autofocus>Rematch</button>
@@ -458,6 +501,13 @@ export function createUI(root, handlers, opts = {}) {
           <button class="btn btn-ghost" data-action="menu">Main menu</button>`}
         </div>`}
       </div>`, 'with-backdrop');
+  }
+
+  // what a School Tournament win added to the player's kit
+  function wonHtml(won) {
+    const items = won ? [...won.erasers, ...won.leads, ...won.abilities] : [];
+    if (!items.length) return '';
+    return `<div class="won-kit"><b>🎒 You won</b>${items.map((n) => `<span>${esc(n)}</span>`).join('')}<small>and ${won.combos} new combo${won.combos === 1 ? '' : 's'} to build</small></div>`;
   }
 
   // 2 players: "A 2 – 1 B"; 3–4 players: everyone with their points, leader first
@@ -579,7 +629,7 @@ export function createUI(root, handlers, opts = {}) {
             </figure>`).join('')}
         </div>
         <ul class="rules">
-          <li><b>Build a top:</b> an eraser body + a pencil-lead tip. Matching brands unlock combos like <em>Deadly Duo</em>.</li>
+          <li><b>Build a top:</b> an eraser body + a pencil-lead tip. Every pair has a combo; ★ star combos like <em>Deadly Duo</em> come from matching brands. Playing alone, you win new parts in the School Tournament.</li>
           <li><b>Spin direction:</b> the way you first pull the grips (or your first key) sets it — ↻ or ↺. Opposite spins hit harder.</li>
           <li><b>Health is spin.</b> It drains over time and drops on every hit. A heavy hit <b>snaps your lead</b>; a second one crumbles your eraser.</li>
           <li><b>Points, first to 4:</b> Spin Finish 1 · Tip Finish 2 · Knock-Out 2 · <b>Snap KO 3</b>. Win without taking damage for a <em>Flawless</em>.</li>

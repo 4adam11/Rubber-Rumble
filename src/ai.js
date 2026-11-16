@@ -9,32 +9,64 @@ export const DIFFICULTY = {
   hard: { rpm: 0.92, spread: 0.05, perfect: 0.65, reaction: 0.1 },
 };
 
+const MASH_RATE = { easy: 4, medium: 6, hard: 8 }; // taps per second in a spin clash
+const lerp = (a, b, t) => a + (b - a) * t;
+
+// How the computer plays at a difficulty: 'easy' | 'medium' | 'hard', or a Rising level 1–7
+// (1 = Easy, 4 = Medium, 7 = Hard, the levels between blend evenly). `smarts` is how cleverly
+// it picks its top and ability. Anything unrecognised plays as medium.
+export function profile(difficulty) {
+  if (typeof difficulty === 'number' && Number.isFinite(difficulty)) {
+    const lv = Math.max(1, Math.min(7, Math.round(difficulty)));
+    const [from, to, t] = lv <= 4 ? ['easy', 'medium', (lv - 1) / 3] : ['medium', 'hard', (lv - 4) / 3];
+    const a = DIFFICULTY[from], b = DIFFICULTY[to];
+    return {
+      rpm: lerp(a.rpm, b.rpm, t), spread: lerp(a.spread, b.spread, t), perfect: lerp(a.perfect, b.perfect, t),
+      reaction: lerp(a.reaction, b.reaction, t), mash: lerp(MASH_RATE[from], MASH_RATE[to], t),
+      smarts: lv <= 2 ? 'easy' : lv <= 5 ? 'medium' : 'hard',
+    };
+  }
+  const name = DIFFICULTY[difficulty] ? difficulty : 'medium';
+  return { ...DIFFICULTY[name], mash: MASH_RATE[name], smarts: name };
+}
+
 const pick = (arr, rng) => arr[Math.min(arr.length - 1, Math.floor(rng() * arr.length))];
 const isBad = (e, l) => !!buildTop(e, l).combo?.bad;
 
-function steadiestLead(eraserId) {
-  const leads = [...LEADS].sort((a, b) => b.stability - a.stability);
-  return leads.find((l) => !isBad(eraserId, l.id)).id;
+function steadiestLead(eraserId, pool = LEADS) {
+  const leads = [...pool].sort((a, b) => b.stability - a.stability);
+  return (leads.find((l) => !isBad(eraserId, l.id)) || leads[0]).id;
 }
 
 const COUNTER = { attack: 'defense', defense: 'stamina', stamina: 'attack' };
 
-export function pickCombo(difficulty, opponentSpec, rng = Math.random) {
-  if (difficulty === 'hard' && opponentSpec) {
+// The computer's top. With a `kit` ({ erasers, leads, abilities }: the parts a solo player has earned)
+// it builds only from those parts, so it never fields something the player cannot have yet.
+export function pickCombo(difficulty, opponentSpec, rng = Math.random, kit = null) {
+  const smarts = profile(difficulty).smarts;
+  const erasers = kit ? ERASERS.filter((e) => kit.erasers.includes(e.id)) : ERASERS;
+  const leads = kit ? LEADS.filter((l) => kit.leads.includes(l.id)) : LEADS;
+  if (smarts === 'hard' && opponentSpec) {
     const want = COUNTER[opponentSpec.archetype];
-    if (!want) return { eraserId: 'apsara-nondust', leadId: 'nataraj-hb' }; // Deadly Duo
-    const eraserId = pick(ERASERS.filter((e) => e.archetype === want), rng).id;
-    return { eraserId, leadId: steadiestLead(eraserId) };
+    const has = (list, id) => list.some((x) => x.id === id);
+    if (!want && has(erasers, 'apsara-nondust') && has(leads, 'nataraj-hb')) return { eraserId: 'apsara-nondust', leadId: 'nataraj-hb' }; // Deadly Duo
+    const counters = want ? erasers.filter((e) => e.archetype === want) : [];
+    if (counters.length) {
+      const eraserId = pick(counters, rng).id;
+      return { eraserId, leadId: steadiestLead(eraserId, leads) };
+    }
+    // the kit has nothing that counters: any sensible top from it
   }
-  for (;;) {
-    const eraserId = pick(ERASERS, rng).id;
-    const leadId = pick(LEADS, rng).id;
-    if (difficulty === 'easy' || !isBad(eraserId, leadId)) return { eraserId, leadId };
+  for (let tries = 0; ; tries++) {
+    const eraserId = pick(erasers, rng).id;
+    const leadId = pick(leads, rng).id;
+    // (a tiny kit may hold nothing but the bad combo: give up looking after a while)
+    if (smarts === 'easy' || !isBad(eraserId, leadId) || tries >= 200) return { eraserId, leadId };
   }
 }
 
 export function cpuLaunch(spec, difficulty, side, rng = Math.random, seats = 2) {
-  const d = DIFFICULTY[difficulty];
+  const d = profile(difficulty);
   const frac = Math.max(0.3, Math.min(1, d.rpm + d.spread * (rng() * 2 - 1)));
   const perfect = rng() < d.perfect;
   const angle = seatAngle(side, seats) + (rng() * 2 - 1) * seatRange(seats) * 0.5;
@@ -77,10 +109,15 @@ const SUITS = {
 };
 const COUNTER_ABILITY = { attack: 'shield', defense: 'secondWind', stamina: 'dash', balance: 'crumbs', wildcard: 'crumbs' };
 
-export function pickAbility(difficulty, mySpec, oppSpec, rng = Math.random) {
-  if (difficulty === 'hard' && oppSpec) return COUNTER_ABILITY[oppSpec.archetype];
-  if (difficulty === 'medium' && mySpec) return pick(SUITS[mySpec.archetype], rng);
-  return pick(ABILITY_IDS, rng);
+export function pickAbility(difficulty, mySpec, oppSpec, rng = Math.random, kit = null) {
+  const smarts = profile(difficulty).smarts;
+  const owned = (id) => !kit || kit.abilities.includes(id);
+  if (smarts === 'hard' && oppSpec && owned(COUNTER_ABILITY[oppSpec.archetype])) return COUNTER_ABILITY[oppSpec.archetype];
+  if (smarts !== 'easy' && mySpec && (smarts === 'medium' || kit)) {
+    const suits = SUITS[mySpec.archetype].filter(owned);
+    if (suits.length) return pick(suits, rng);
+  }
+  return pick(kit ? kit.abilities : ABILITY_IDS, rng);
 }
 
 // the closest rival still spinning (with two tops: the other one)
@@ -119,10 +156,8 @@ function decide(world, index) {
   return { steer, special: wantsSpecial(me, opp, world) };
 }
 
-const MASH_RATE = { easy: 4, medium: 6, hard: 8 }; // taps per second in a spin clash
-
 export function createCpu(difficulty, index, rng = Math.random) {
-  const reaction = DIFFICULTY[difficulty].reaction;
+  const { reaction, mash } = profile(difficulty);
   let mashAcc = 0;
   let timer = reaction;
   let intent = { steer: { x: 0, y: 0 }, special: false };
@@ -130,7 +165,7 @@ export function createCpu(difficulty, index, rng = Math.random) {
     think(world, dt) {
       if (world.clash) {
         if (world.clash.pair && !world.clash.pair.includes(index)) return { steer: { x: 0, y: 0 }, special: false, mash: 0 };
-        mashAcc += MASH_RATE[difficulty] * dt * (0.8 + 0.4 * rng());
+        mashAcc += mash * dt * (0.8 + 0.4 * rng());
         const taps = Math.floor(mashAcc);
         mashAcc -= taps;
         return { steer: { x: 0, y: 0 }, special: false, mash: taps };

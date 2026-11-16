@@ -20,15 +20,45 @@ export const LEADS = [
   { id: 'faber-2b', name: 'Faber-Castell 2B', stability: 9, glide: 5, speed: 3, durability: 7, note: 'Wide tip, very stable, slow' },
 ];
 
-// Checked in this order; first match wins.
+// Every eraser + lead pair has a combo. Star combos (brand matches) are a clear bonus; the one bad
+// combo is a joke; the rest are standard. Checked in this order; first match wins.
 export const COMBOS = [
-  { id: 'deadly-duo', name: 'Deadly Duo', desc: 'Attack +2, Stability +1', bad: false, erasers: ['apsara-nondust', 'apsara-jumbo'], leads: ['nataraj-hb'], mods: { attack: 2, stability: 1 } },
-  { id: 'doms-double', name: 'Doms Double', desc: 'Hex wobble cancelled, Stamina +1', bad: false, erasers: ['doms-cubo'], leads: ['doms-y1'], mods: { baseWobble: -2, stamina: 1 } },
-  { id: 'exam-hall', name: 'Exam Hall', desc: 'Stamina +2', bad: false, erasers: ['camlin-dustfree'], leads: ['camlin-exam'], mods: { stamina: 2 } },
-  { id: 'toppers-kit', name: "Topper's Kit", desc: 'Defense +2, Stability +1', bad: false, erasers: ['faber-dustfree'], leads: ['faber-2b'], mods: { defense: 2, stability: 1 } },
-  { id: 'sugar-rush', name: 'Sugar Rush', desc: 'Speed +2, Stamina −1', bad: false, erasers: ['fruit-scented'], leads: ['apsara-platinum'], mods: { speed: 2, stamina: -1 } },
-  { id: 'sleepy-bench', name: 'Sleepy Bench', desc: 'Speed −2, Stability −2 (too heavy for a soft tip)', bad: true, erasers: ['apsara-jumbo'], leads: ['faber-2b'], mods: { speed: -2, stability: -2 } },
-  { id: 'hindustan-family', name: 'Hindustan Family', desc: 'Stamina +1, Durability +1', bad: false, erasers: 'family', leads: 'family', mods: { stamina: 1, durability: 1 } },
+  { id: 'deadly-duo', name: 'Deadly Duo', desc: 'Attack +2, Stability +1', bad: false, star: true, erasers: ['apsara-nondust', 'apsara-jumbo'], leads: ['nataraj-hb'], mods: { attack: 2, stability: 1 } },
+  { id: 'doms-double', name: 'Doms Double', desc: 'Hex wobble cancelled, Stamina +1', bad: false, star: true, erasers: ['doms-cubo'], leads: ['doms-y1'], mods: { baseWobble: -2, stamina: 1 } },
+  { id: 'exam-hall', name: 'Exam Hall', desc: 'Stamina +2', bad: false, star: true, erasers: ['camlin-dustfree'], leads: ['camlin-exam'], mods: { stamina: 2 } },
+  { id: 'toppers-kit', name: "Topper's Kit", desc: 'Defense +2, Stability +1', bad: false, star: true, erasers: ['faber-dustfree'], leads: ['faber-2b'], mods: { defense: 2, stability: 1 } },
+  { id: 'sugar-rush', name: 'Sugar Rush', desc: 'Speed +2, Stamina −1', bad: false, star: true, erasers: ['fruit-scented'], leads: ['apsara-platinum'], mods: { speed: 2, stamina: -1 } },
+  { id: 'sleepy-bench', name: 'Sleepy Bench', desc: 'Speed −2, Stability −2 (too heavy for a soft tip)', bad: true, star: false, erasers: ['apsara-jumbo'], leads: ['faber-2b'], mods: { speed: -2, stability: -2 } },
+  { id: 'hindustan-family', name: 'Hindustan Family', desc: 'Stamina +1, Durability +1', bad: false, star: true, erasers: 'family', leads: 'family', mods: { stamina: 1, durability: 1 } },
+  // Standard combos: every other pair. One stat up, one down: a flavour, not free power.
+  { id: 'smooth-operator', name: 'Smooth Operator', desc: 'Glide +1, Attack −1', bad: false, star: false, erasers: ['apsara-nondust'], leads: ['doms-y1'], mods: { glide: 1, attack: -1 } },
+  { id: 'class-test', name: 'Class Test', desc: 'Stability +1, Speed −1', bad: false, star: false, erasers: ['apsara-nondust'], leads: ['camlin-exam'], mods: { stability: 1, speed: -1 } },
+  { id: 'steady-hand', name: 'Steady Hand', desc: 'Defense +1, Speed −1', bad: false, star: false, erasers: ['apsara-nondust'], leads: ['faber-2b'], mods: { defense: 1, speed: -1 } },
+  { id: 'sliding-almirah', name: 'Sliding Almirah', desc: 'Glide +1, Stability −1', bad: false, star: false, erasers: ['apsara-jumbo'], leads: ['doms-y1'], mods: { glide: 1, stability: -1 } },
+  { id: 'front-bencher', name: 'Front Bencher', desc: 'Defense +1, Speed −1', bad: false, star: false, erasers: ['apsara-jumbo'], leads: ['camlin-exam'], mods: { defense: 1, speed: -1 } },
+  { id: 'paper-plane', name: 'Paper Plane', desc: 'Glide +1, Defense −1', bad: false, star: false, erasers: ['nataraj-621'], leads: ['doms-y1'], mods: { glide: 1, defense: -1 } },
+  { id: 'surprise-test', name: 'Surprise Test', desc: 'Attack +1, Stamina −1', bad: false, star: false, erasers: ['nataraj-621'], leads: ['camlin-exam'], mods: { attack: 1, stamina: -1 } },
+  { id: 'blunt-force', name: 'Blunt Force', desc: 'Attack +1, Speed −1', bad: false, star: false, erasers: ['nataraj-621'], leads: ['faber-2b'], mods: { attack: 1, speed: -1 } },
+  { id: 'sharp-corners', name: 'Sharp Corners', desc: 'Attack +1, Defense −1', bad: false, star: false, erasers: ['doms-cubo'], leads: ['nataraj-hb'], mods: { attack: 1, defense: -1 } },
+  { id: 'recess-bell', name: 'Recess Bell', desc: 'Speed +1, Stamina −1', bad: false, star: false, erasers: ['doms-cubo'], leads: ['apsara-platinum'], mods: { speed: 1, stamina: -1 } },
+  { id: 'unbreakable-hex', name: 'Unbreakable Hex', desc: 'Durability +1, Glide −1', bad: false, star: false, erasers: ['doms-cubo'], leads: ['apsara-absolute'], mods: { durability: 1, glide: -1 } },
+  { id: 'protractor', name: 'Protractor', desc: 'Stability +1, Attack −1', bad: false, star: false, erasers: ['doms-cubo'], leads: ['camlin-exam'], mods: { stability: 1, attack: -1 } },
+  { id: 'hex-tank', name: 'Hex Tank', desc: 'Defense +1, Speed −1', bad: false, star: false, erasers: ['doms-cubo'], leads: ['faber-2b'], mods: { defense: 1, speed: -1 } },
+  { id: 'homework-done', name: 'Homework Done', desc: 'Stamina +1, Attack −1', bad: false, star: false, erasers: ['camlin-dustfree'], leads: ['nataraj-hb'], mods: { stamina: 1, attack: -1 } },
+  { id: 'last-minute-revision', name: 'Last-Minute Revision', desc: 'Speed +1, Stability −1', bad: false, star: false, erasers: ['camlin-dustfree'], leads: ['apsara-platinum'], mods: { speed: 1, stability: -1 } },
+  { id: 'full-marks', name: 'Full Marks', desc: 'Durability +1, Speed −1', bad: false, star: false, erasers: ['camlin-dustfree'], leads: ['apsara-absolute'], mods: { durability: 1, speed: -1 } },
+  { id: 'free-period', name: 'Free Period', desc: 'Glide +1, Defense −1', bad: false, star: false, erasers: ['camlin-dustfree'], leads: ['doms-y1'], mods: { glide: 1, defense: -1 } },
+  { id: 'double-period', name: 'Double Period', desc: 'Stamina +1, Speed −1', bad: false, star: false, erasers: ['camlin-dustfree'], leads: ['faber-2b'], mods: { stamina: 1, speed: -1 } },
+  { id: 'neat-handwriting', name: 'Neat Handwriting', desc: 'Stability +1, Attack −1', bad: false, star: false, erasers: ['faber-dustfree'], leads: ['nataraj-hb'], mods: { stability: 1, attack: -1 } },
+  { id: 'late-runner', name: 'Late Runner', desc: 'Speed +1, Defense −1', bad: false, star: false, erasers: ['faber-dustfree'], leads: ['apsara-platinum'], mods: { speed: 1, defense: -1 } },
+  { id: 'brick-wall', name: 'Brick Wall', desc: 'Defense +1, Glide −1', bad: false, star: false, erasers: ['faber-dustfree'], leads: ['apsara-absolute'], mods: { defense: 1, glide: -1 } },
+  { id: 'polished-floor', name: 'Polished Floor', desc: 'Glide +1, Stamina −1', bad: false, star: false, erasers: ['faber-dustfree'], leads: ['doms-y1'], mods: { glide: 1, stamina: -1 } },
+  { id: 'revision-week', name: 'Revision Week', desc: 'Stamina +1, Speed −1', bad: false, star: false, erasers: ['faber-dustfree'], leads: ['camlin-exam'], mods: { stamina: 1, speed: -1 } },
+  { id: 'tiffin-break', name: 'Tiffin Break', desc: 'Attack +1, Defense −1', bad: false, star: false, erasers: ['fruit-scented'], leads: ['nataraj-hb'], mods: { attack: 1, defense: -1 } },
+  { id: 'hard-candy', name: 'Hard Candy', desc: 'Durability +1, Stamina −1', bad: false, star: false, erasers: ['fruit-scented'], leads: ['apsara-absolute'], mods: { durability: 1, stamina: -1 } },
+  { id: 'jelly-slide', name: 'Jelly Slide', desc: 'Glide +1, Stability −1', bad: false, star: false, erasers: ['fruit-scented'], leads: ['doms-y1'], mods: { glide: 1, stability: -1 } },
+  { id: 'lunchbox-treat', name: 'Lunchbox Treat', desc: 'Stability +1, Speed −1', bad: false, star: false, erasers: ['fruit-scented'], leads: ['camlin-exam'], mods: { stability: 1, speed: -1 } },
+  { id: 'bubblegum', name: 'Bubblegum', desc: 'Defense +1, Glide −1', bad: false, star: false, erasers: ['fruit-scented'], leads: ['faber-2b'], mods: { defense: 1, glide: -1 } },
 ];
 
 export const SPECIAL_BY_ARCHETYPE = {
@@ -79,7 +109,7 @@ export function buildTop(eraserId, leadId) {
     mass: e.mass, size: e.size, radius: 0.07 + e.size * 0.008,
     ...s,
     maxRPM: 1000 * (1.15 - e.mass * 0.03),
-    combo: combo ? { id: combo.id, name: combo.name, desc: combo.desc, bad: combo.bad } : null,
+    combo: combo ? { id: combo.id, name: combo.name, desc: combo.desc, bad: combo.bad, star: !!combo.star } : null,
     card,
     special: SPECIAL_BY_ARCHETYPE[e.archetype],
   };

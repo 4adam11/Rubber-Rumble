@@ -4,7 +4,9 @@ import { createWorld, simulate, CONST } from './physics.js';
 import {
   LAUNCH, createLaunch, slide, setPlace, keyStroke, addStroke, release, updateLaunch, chargeSpin, twistLeft,
 } from './launch.js';
-import { cpuLaunch, createCpu, pickCombo, pickAbility } from './ai.js';
+import { cpuLaunch, createCpu, pickCombo, pickAbility, profile } from './ai.js';
+import { kitFor, isFullKit, fitParts, fitAbility, inKit, rewardFor, humansIn, creatorMustRepick, earnedKit } from './kit.js';
+import { afterMatch } from './rising.js';
 import { createRenderer, PLAYER_COLORS, arenaToScreen } from './render.js';
 import { createInput, specialButton } from './input.js';
 import { twistPad, drawTwistPad } from './twistpad.js';
@@ -163,11 +165,11 @@ function startRound() {
   g.world = null;
   g.resultShown = false;
   renderer.hud.reset();
-  if (g.config.mode === 'cpu' && g.config.difficulty === 'hard' && g.round > 1) {
-    const p = pickCombo('hard', g.specs[0]);
+  if (g.config.mode === 'cpu' && profile(g.config.difficulty).smarts === 'hard' && g.round > 1) {
+    const p = pickCombo(g.config.difficulty, g.specs[0], Math.random, g.config.kit || null);
     g.config.parts[1] = p;
     g.specs[1] = buildTop(p.eraserId, p.leadId);
-    g.config.abilities[1] = pickAbility('hard', g.specs[1], g.specs[0]);
+    g.config.abilities[1] = pickAbility(g.config.difficulty, g.specs[1], g.specs[0], Math.random, g.config.kit || null);
   }
   // phone players charge on the twist pad, so they get longer to pull, hold and time the release
   const n = g.specs.length;
@@ -457,6 +459,7 @@ function showResult() {
       color: PLAYER_COLORS[st.winner], names, colors, wins: st.points,
       extra: g.rubberality ? `💥 Finished with a Rubberality: ${FINISHERS[g.finish.finisher].name}!` : '',
       coins: g.coinResult,
+      won: g.wonKit || null, risingMoved: g.risingMoved || null,
       rounds: st.rounds.map((x, k) => `${roundLabel(st.rounds, k)}: ${x.winner === null ? 'draw' : `${names[x.winner]} · ${SHORT[x.reason]} +${x.points}`}`),
     });
   } else {
@@ -575,7 +578,7 @@ function showTitle() {
   renderer.setView(0);
   audio.silence();
   startDemo();
-  ui.show('title', { muted: settings.muted, coins: settings.wallet.coins });
+  ui.show('title', titleData());
 }
 
 // sound on/off from the arena button or the M key (same setting as the title screen)
@@ -585,7 +588,7 @@ function toggleSound() {
   if (settings.muted) audio.silence();
   saveSettings(settings);
   if (ui.current === 'hud') ui.show('hud', { muted: settings.muted });
-  if (ui.current === 'title') ui.show('title', { muted: settings.muted, coins: settings.wallet.coins });
+  if (ui.current === 'title') ui.show('title', titleData());
   if (ui.current === 'pause' && online()) ui.show('pause', { online: true, muted: settings.muted });
 }
 
@@ -596,8 +599,13 @@ function payOut(st) {
   const who = online() ? friends.me : vsCpu() ? 0 : st.winner;
   const won = st.winner === who;
   const rung = g.config.rung ?? 0;
+  if (g.config.mode === 'cpu' && g.config.rising) { // Rising: two wins in a row go up a level, two losses go down
+    const next = afterMatch(settings.rising, won);
+    settings.rising = { level: next.level, streak: next.streak };
+    g.risingMoved = next.moved ? { level: next.level, moved: next.moved } : null;
+  }
   const r = matchCoins({
-    mode: online() ? '2p' : g.config.mode, difficulty: g.config.difficulty, won,
+    mode: online() ? 'friends' : g.config.mode, humans: g.config.humans, difficulty: g.config.difficulty, won,
     roundsWon: st.wins[who], flawless: g.bonus.flawless[who], snapko: g.bonus.snapko[who],
     rubberality: !!g.rubberality && won,
     rung, champion: g.config.mode === 'tournament' && won && rung === RUNGS.length - 1,
@@ -626,6 +634,7 @@ function tournamentResult(st) {
   const won = st.winner === 0;
   if (!g.ladderSaved) { // move up the ladder once per match
     g.ladderSaved = true;
+    g.wonKit = won ? rewardFor(g.config.rung, settings.tournament) : null; // their eraser, lead and ability
     if (g.config.rung === settings.tournament.rung) settings.tournament = advance(settings.tournament, won);
     saveSettings(settings);
   }
@@ -646,35 +655,47 @@ function tournamentResult(st) {
 
 function who(player) { return session.mode === '2p' ? `Player ${player + 1},` : 'You,'; }
 
+const titleData = () => ({ muted: settings.muted, coins: settings.wallet.coins, kitNote: settings.kitNote });
+
+// The parts and abilities this player may build from right now: everything when two or more humans
+// play (same device or online), otherwise what they have won in the School Tournament.
+const currentKit = () => kitFor({ mode: session?.mode, humans: friends ? humansIn(friends.room) : 1, progress: settings.tournament });
+const limitOf = (kit) => (isFullKit(kit) ? null : kit); // null = nothing is locked
+
 function openPicker(player) {
   session.picking = player;
-  const parts = session.parts?.[player] || settings.lastParts[player];
+  const kit = currentKit();
+  const parts = fitParts(kit, session.parts?.[player] || settings.lastParts[player]);
   let note = '';
   if (session.mode === 'tournament') {
     const r = RUNGS[session.rung];
     note = `Next up: ${r.name} — “${r.taunt}”`;
   } else if (session.mode === 'cpu') {
-    note = `Versus the computer (${session.difficulty}).`;
-    if (session.difficulty === 'hard') note += ' It will counter-pick whatever you build.';
+    note = session.rising ? `Versus the computer (Rising · level ${session.difficulty} of 7).` : `Versus the computer (${session.difficulty}).`;
+    if (profile(session.difficulty).smarts === 'hard') note += ' It will counter-pick whatever you build.';
   } else if (session.mode === 'friends') note = 'Pick your top for the battle with your friends.';
   else if (player === 1) note = 'Player 1 is ready. Player 2, your turn!';
   else note = 'Pass the device after you pick.';
   ui.show('picker', {
     player, who: who(player), color: PLAYER_COLORS[player], note,
     eraserId: parts.eraserId, leadId: parts.leadId,
+    kit: limitOf(kit) && { erasers: kit.erasers, leads: kit.leads },
     skin: player === 0 ? { ...settings.wallet.equipped } : undefined,
   });
 }
 
 function openAbility(player) {
   session.picking = player;
+  const kit = currentKit();
   ui.show('ability', {
     who: who(player), color: PLAYER_COLORS[player],
-    selected: session.abilities?.[player] || settings.lastAbility[player],
+    selected: fitAbility(kit, session.abilities?.[player] || settings.lastAbility[player]),
+    kit: limitOf(kit) && { abilities: kit.abilities },
   });
 }
 
 function partsReady(player, parts) {
+  if (!inKit(currentKit(), parts)) { openPicker(player); return; } // not won yet: pick again
   session.parts = session.parts || [];
   session.parts[player] = parts;
   settings.lastParts[player] = parts;
@@ -683,6 +704,7 @@ function partsReady(player, parts) {
 }
 
 function abilityReady(player, ability) {
+  if (!currentKit().abilities.includes(ability)) { openAbility(player); return; }
   session.abilities = session.abilities || [];
   session.abilities[player] = ability;
   settings.lastAbility[player] = ability;
@@ -734,14 +756,17 @@ function beginMatch() {
     });
     return;
   }
+  let kit = null;
   if (session.mode === 'cpu') {
+    if (session.rising) session.difficulty = settings.rising.level; // a rematch plays at the level just reached
+    kit = limitOf(currentKit()); // the computer never fields a part the player hasn't won
     const mine = buildTop(p0.eraserId, p0.leadId);
-    p1 = session.difficulty === 'hard' ? pickCombo('hard', mine) : pickCombo(session.difficulty, null);
-    abilities[1] = pickAbility(session.difficulty, buildTop(p1.eraserId, p1.leadId), mine);
+    p1 = pickCombo(session.difficulty, mine, Math.random, kit);
+    abilities[1] = pickAbility(session.difficulty, buildTop(p1.eraserId, p1.leadId), mine, Math.random, kit);
   }
   startMatch({
     mode: session.mode, difficulty: session.difficulty, parts: [{ ...p0 }, { ...p1 }],
-    abilities, arena: session.arena || 'thali',
+    abilities, arena: session.arena || 'thali', kit, rising: !!session.rising,
   });
 }
 
@@ -768,7 +793,8 @@ addEventListener('pagehide', () => { try { friends?.link.close(); } catch { /* a
 
 function onAction(action, value) {
   switch (action) {
-    case 'play-cpu': session = { mode: 'cpu' }; ui.show('difficulty'); break;
+    case 'play-cpu': session = { mode: 'cpu' }; ui.show('difficulty', { rising: settings.rising }); break;
+    case 'kit-note-ok': settings.kitNote = false; saveSettings(settings); ui.show('title', titleData()); break;
     case 'play-2p': session = { mode: '2p' }; openPicker(0); break;
     case 'friends': ui.show('friends', { name: settings.nickname, code: pendingCode }); break;
     case 'create-room': createRoomAction(value); break;
@@ -806,13 +832,17 @@ function onAction(action, value) {
       session.difficulty = RUNGS[session.rung].difficulty;
       openPicker(0);
       break;
-    case 'difficulty': session.difficulty = value; openPicker(0); break;
+    case 'difficulty':
+      session.rising = value === 'rising';
+      session.difficulty = session.rising ? settings.rising.level : value;
+      openPicker(0);
+      break;
     case 'howto': ui.show('howto'); break;
     case 'toggle-sound':
       settings.muted = !settings.muted;
       audio.setMuted(settings.muted);
       saveSettings(settings);
-      ui.show('title', { muted: settings.muted, coins: settings.wallet.coins });
+      ui.show('title', titleData());
       break;
     case 'ready': partsReady(session.picking, value); break;
     case 'ability-ready': abilityReady(session.picking, value); break;
@@ -845,7 +875,7 @@ function back() {
   if (screen === 'picker') {
     if (session.picking === 1) { openAbility(0); return; }
     if (session.changing) { session.changing = null; game.resultShown = false; showResult(); return; }
-    if (session.mode === 'cpu') { ui.show('difficulty'); return; }
+    if (session.mode === 'cpu') { ui.show('difficulty', { rising: settings.rising }); return; }
     if (session.mode === 'tournament') { showLadder(); return; }
     showTitle();
   }
@@ -963,8 +993,10 @@ function submitMySeat(parts, ability) {
 
 function lobbyAddCpu(diff) {
   if (friends?.role !== 'host') return;
-  const parts = pickCombo(diff, null);
-  const ability = pickAbility(diff, buildTop(parts.eraserId, parts.leadId), null);
+  // alone in the room, the computer builds from what the creator has won, like any solo game
+  const kit = humansIn(friends.room) >= 2 ? null : limitOf(earnedKit(settings.tournament));
+  const parts = pickCombo(diff, null, Math.random, kit);
+  const ability = pickAbility(diff, buildTop(parts.eraserId, parts.leadId), null, Math.random, kit);
   friends.room = addCpu(friends.room, diff, parts, ability);
   broadcastLobby();
 }
@@ -987,11 +1019,19 @@ function friendsConfig(room) {
     kinds: room.seats.map((s) => s.kind),
     skins: room.seats.map((s) => s.skin),
     difficulties: room.seats.map((s) => s.difficulty || 'medium'),
+    humans: humansIn(room), // coins are only paid when two or more humans started the match
   };
 }
 
 function hostStartMatch() {
   if (friends?.role !== 'host' || !canStart(friends.room)) return;
+  if (creatorMustRepick(friends.room, settings.tournament)) {
+    // every friend has left: with only computers to play, the creator is back on their own kit
+    friends.room = setSeat(friends.room, 0, { ready: false });
+    broadcastLobby();
+    showLobby('Pick again: that top is for games with friends.');
+    return;
+  }
   friends.room = startRoom(friends.room);
   paused = false;
   session = null;

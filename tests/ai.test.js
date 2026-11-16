@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ERASERS, buildTop } from '../src/parts.js';
 import { createWorld, step } from '../src/physics.js';
-import { DIFFICULTY, pickCombo, cpuLaunch, createCpu } from '../src/ai.js';
+import { DIFFICULTY, pickCombo, pickAbility, cpuLaunch, createCpu } from '../src/ai.js';
 import { world2, launch, seeded } from './helpers.js';
 
 const archetypeOf = (id) => ERASERS.find((e) => e.id === id).archetype;
@@ -105,5 +105,43 @@ test('cpu intents are always valid', () => {
       }
       step(w, intents);
     }
+  }
+});
+
+// ---- the computer builds from the player's kit ----
+const START_KIT = { erasers: ['apsara-nondust', 'doms-cubo'], leads: ['nataraj-hb', 'doms-y1'], abilities: ['recentre', 'secondWind'] };
+
+test('with a kit, every difficulty builds only from it', () => {
+  const rng = seeded(7);
+  for (const d of ['easy', 'medium', 'hard', 2, 5, 7]) {
+    for (let i = 0; i < 60; i++) {
+      const opp = buildTop('doms-cubo', 'doms-y1'); // attack: Hard wants a defense eraser, and the kit has none
+      const p = pickCombo(d, opp, rng, START_KIT);
+      assert.ok(START_KIT.erasers.includes(p.eraserId) && START_KIT.leads.includes(p.leadId), `${d}: ${p.eraserId}+${p.leadId}`);
+      const a = pickAbility(d, buildTop(p.eraserId, p.leadId), opp, rng, START_KIT);
+      assert.ok(START_KIT.abilities.includes(a), `${d}: ${a}`);
+    }
+  }
+});
+
+test('Hard still counter-picks when the kit has the right eraser', () => {
+  const kit = { erasers: ['apsara-nondust', 'doms-cubo', 'camlin-dustfree'], leads: ['nataraj-hb', 'doms-y1'], abilities: ['recentre', 'secondWind', 'dash'] };
+  const opp = buildTop('apsara-jumbo', 'nataraj-hb'); // defense: countered by stamina
+  for (let i = 0; i < 20; i++) assert.equal(pickCombo('hard', opp, seeded(i + 1), kit).eraserId, 'camlin-dustfree');
+  assert.equal(pickAbility('hard', buildTop('camlin-dustfree', 'nataraj-hb'), opp, seeded(1), kit), 'secondWind', 'the counter ability is in the kit');
+});
+
+test('a kit whose only pair is the bad combo still gets a pick (no endless loop)', () => {
+  const kit = { erasers: ['apsara-jumbo'], leads: ['faber-2b'], abilities: ['plant'] };
+  for (const d of ['easy', 'medium', 'hard']) {
+    assert.deepEqual(pickCombo(d, buildTop('doms-cubo', 'doms-y1'), seeded(3), kit), { eraserId: 'apsara-jumbo', leadId: 'faber-2b' });
+  }
+});
+
+test('without a kit, picks are unchanged', () => {
+  const opp = buildTop('camlin-dustfree', 'camlin-exam');
+  for (const d of ['easy', 'medium', 'hard']) {
+    assert.deepEqual(pickCombo(d, opp, seeded(1)), pickCombo(d, opp, seeded(1), null));
+    assert.equal(pickAbility(d, opp, opp, seeded(1)), pickAbility(d, opp, opp, seeded(1), null));
   }
 });

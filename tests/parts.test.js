@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ERASERS, LEADS, COMBOS, buildTop } from '../src/parts.js';
+import { ERASERS, LEADS, COMBOS, buildTop, findCombo } from '../src/parts.js';
 
 const inRange = (v) => Number.isInteger(v) && v >= 1 && v <= 10;
 
@@ -59,7 +59,9 @@ test('each named combo only on its parts', () => {
   for (const e of ERASERS) {
     for (const l of LEADS) {
       const c = buildTop(e.id, l.id).combo;
-      assert.equal(c ? c.id : null, expected(e.id, l.id), `${e.id}+${l.id}`);
+      const want = expected(e.id, l.id);
+      if (want) assert.equal(c.id, want, `${e.id}+${l.id}`);
+      else assert.ok(c && !c.star && !c.bad, `${e.id}+${l.id} has a standard combo`); // every other pair
     }
   }
 });
@@ -73,8 +75,8 @@ test('sleepy bench is bad', () => {
 
 test('card formulas', () => {
   const t = buildTop('camlin-dustfree', 'doms-y1');
-  assert.equal(t.combo, null);
-  assert.equal(t.card.stamina, Math.round((8 + 9) / 2));
+  assert.equal(t.combo.id, 'free-period'); // Glide +1 (9 → 10), Defense −1
+  assert.equal(t.card.stamina, Math.round((8 + 10) / 2));
   assert.equal(t.card.balance, 6);
   assert.equal(t.card.speed, 5);
 });
@@ -95,4 +97,38 @@ test('special mapping', () => {
 test('unknown id throws', () => {
   assert.throws(() => buildTop('nope', 'nataraj-hb'));
   assert.throws(() => buildTop('apsara-nondust', 'nope'));
+});
+
+// ---- a combo for every pair ----
+test('every eraser + lead pair has a combo', () => {
+  for (const e of ERASERS) for (const l of LEADS) assert.ok(buildTop(e.id, l.id).combo, `${e.id}+${l.id}`);
+});
+
+test('13 star combos, 1 bad combo, 28 standard combos', () => {
+  const all = ERASERS.flatMap((e) => LEADS.map((l) => buildTop(e.id, l.id).combo));
+  assert.equal(all.filter((c) => c.star).length, 13);
+  assert.equal(all.filter((c) => c.bad).length, 1);
+  assert.equal(all.filter((c) => !c.star && !c.bad).length, 28);
+});
+
+test('a standard combo is exactly one stat up and one stat down, for one pair', () => {
+  const standard = COMBOS.filter((x) => !x.star && !x.bad);
+  assert.equal(standard.length, 28);
+  for (const c of standard) {
+    assert.deepEqual(Object.values(c.mods).sort(), [-1, 1], c.id);
+    assert.equal(c.erasers.length, 1, c.id);
+    assert.equal(c.leads.length, 1, c.id);
+    assert.match(c.desc, /\+1, .+ −1$/, c.id);
+  }
+  assert.equal(new Set(COMBOS.map((c) => c.id)).size, COMBOS.length, 'ids are unique');
+  assert.equal(new Set(COMBOS.map((c) => c.name)).size, COMBOS.length, 'names are unique');
+});
+
+test('the old combos are untouched', () => {
+  assert.deepEqual(findCombo('apsara-nondust', 'nataraj-hb').mods, { attack: 2, stability: 1 });
+  assert.equal(findCombo('apsara-jumbo', 'faber-2b').id, 'sleepy-bench');
+  assert.equal(findCombo('nataraj-621', 'apsara-absolute').id, 'hindustan-family');
+  assert.equal(findCombo('doms-cubo', 'nataraj-hb').name, 'Sharp Corners');
+  assert.equal(buildTop('doms-cubo', 'nataraj-hb').combo.star, false);
+  assert.equal(buildTop('apsara-nondust', 'nataraj-hb').combo.star, true);
 });

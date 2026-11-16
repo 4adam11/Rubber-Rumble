@@ -1,4 +1,5 @@
 // Per-device settings in localStorage. Always safe to call.
+import { newRising, cleanRising } from './rising.js';
 import { ERASERS, LEADS } from './parts.js';
 import { ABILITY_IDS } from './abilities.js';
 import { ARENA_IDS } from './arenas.js';
@@ -17,6 +18,9 @@ export function defaultSettings() {
     tournament: { rung: 0, champion: false },
     wallet: newWallet(),
     nickname: '',
+    rising: newRising(), // the Rising difficulty level for Play vs Computer
+    kitVersion: 1,  // saves from before the earned kit don't have this
+    kitNote: false, // true until an existing player has seen the one-time "what changed" note
   };
 }
 
@@ -30,6 +34,8 @@ export function loadSettings() {
     const raw = JSON.parse(localStorage.getItem(KEY) || 'null');
     if (raw && typeof raw === 'object') {
       if (typeof raw.muted === 'boolean') s.muted = raw.muted;
+      s.kitNote = raw.kitVersion === 1 ? raw.kitNote === true : true;
+      s.rising = cleanRising(raw.rising);
       if (Array.isArray(raw.lastParts)) {
         raw.lastParts.slice(0, 2).forEach((p, i) => {
           if (validParts(p)) s.lastParts[i] = { eraserId: p.eraserId, leadId: p.leadId };

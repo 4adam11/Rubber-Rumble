@@ -6,8 +6,10 @@ import { createWorld, step, simulate, CONST, CLASH } from '../src/physics.js';
 import { still } from './helpers.js';
 import { fingerprint } from '../tools/fingerprint2.mjs';
 
-// recorded from the 2-top engine before the N-top change
-const BASELINE = ['0,tipped,4.6833,277.037,139.157', '1,tipped,11.1583,124.736,390.569', '0,stopped,8.0167,487.78,0', '0,tipped,4.6583,287.291,166.173', '1,tipped,10.025,85.435,297.81', '0,stopped,12.2667,391.778,0', '0,tipped,4.5583,225.544,63.186', '1,tipped,10.875,121.528,399.159', '0,stopped,11.5417,261.822,0'];
+// recorded from the 2-top engine before the N-top change. Battles 3, 6 and 9 were re-recorded when
+// Fruit-Scented + Absolute gained its "Hard Candy" combo (the engine itself did not change; the other
+// six, whose tops kept their stats, still match the original recording).
+const BASELINE = ['0,tipped,4.6833,277.037,139.157', '1,tipped,11.1583,124.736,390.569', '0,stopped,8.4917,471.602,0', '0,tipped,4.6583,287.291,166.173', '1,tipped,10.025,85.435,297.81', '0,stopped,12.2667,392.824,0', '0,tipped,4.5583,225.544,63.186', '1,tipped,10.875,121.528,399.159', '0,stopped,11.4917,278.422,0'];
 
 const spec = () => buildTop('apsara-nondust', 'nataraj-hb');
 const idle = (n) => Array.from({ length: n }, () => ({ steer: { x: 0, y: 0 }, special: false, mash: 0 }));

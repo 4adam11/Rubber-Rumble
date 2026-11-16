@@ -48,7 +48,7 @@ export function bossSpec(spec) {
     ...spec,
     radius: spec.radius * 1.32,
     mass: spec.mass * 1.35,
-    maxRPM: spec.maxRPM * 1.25,
+    maxRPM: spec.maxRPM * 1.14, // was 1.25: no top a player owns on arrival could win a third of its rounds (tools/kit-check.mjs)
     attack: Math.min(10, spec.attack + 2),
     boss: true,
   };

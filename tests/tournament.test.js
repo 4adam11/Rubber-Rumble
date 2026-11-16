@@ -41,7 +41,7 @@ test('the boss top is bigger, heavier and spins longer', () => {
   const boss = bossSpec(base);
   assert.ok(boss.radius > base.radius * 1.2);
   assert.ok(boss.mass > base.mass);
-  assert.ok(boss.maxRPM > base.maxRPM * 1.15);
+  assert.ok(boss.maxRPM > base.maxRPM * 1.1 && boss.maxRPM < base.maxRPM * 1.2, 'spins longer, but not so long that no earned top can win (tools/kit-check.mjs)');
   assert.equal(boss.boss, true);
   assert.equal(base.boss, undefined, 'original untouched');
 });

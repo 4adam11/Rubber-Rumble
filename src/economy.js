@@ -21,15 +21,20 @@ export function newWallet() {
 export const owns = (w, id) => w.owned.includes(id);
 
 const MATCH_WIN = { easy: 30, medium: 50, hard: 80 };
+const RISING_WIN = [30, 40, 45, 55, 65, 70, 80]; // Rising levels 1–7
 
 // What a finished match pays. lines are shown on the result screen.
-export function matchCoins({ mode, difficulty = 'medium', won, roundsWon = 0, flawless = 0, rubberality = false, snapko = 0, rung = 0, champion = false }) {
+// Coins are only for real opposition: 2 Players on one device pays nothing (one person could play both
+// sides), and an online match pays only when two or more humans started it.
+export function matchCoins({ mode, difficulty = 'medium', won, roundsWon = 0, flawless = 0, rubberality = false, snapko = 0, rung = 0, champion = false, humans = 2 }) {
   const lines = [];
+  if (mode === '2p' || (mode === 'friends' && humans < 2)) return { lines, total: 0 };
   const add = (label, coins) => { if (coins > 0) lines.push({ label, coins }); };
   add('Rounds won', roundsWon * 10);
   if (won) {
     if (mode === 'tournament') add(`Rung ${rung + 1} beaten`, 60 + rung * 20);
-    else if (mode === '2p') add('Match win', 20);
+    else if (mode === 'friends') add('Match win', 20);
+    else if (typeof difficulty === 'number') add(`Match win (Rising level ${difficulty})`, RISING_WIN[Math.max(1, Math.min(7, Math.round(difficulty))) - 1]);
     else add(`Match win (${difficulty})`, MATCH_WIN[difficulty] ?? 50);
     if (champion) add('School Champion!', 300);
   } else {
